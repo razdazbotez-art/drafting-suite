@@ -95,6 +95,9 @@ namespace DraftingSuite
         [DataMember(Order = 27)]
         public bool ExplodeNamedBlocks { get; set; } = false;
 
+        [DataMember(Order = 28)]
+        public bool InvertKeepTextLayerPatterns { get; set; } = false;
+
         public static string SettingsPath
         {
             get

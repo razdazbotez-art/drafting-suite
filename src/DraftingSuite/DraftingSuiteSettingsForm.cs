@@ -28,6 +28,7 @@ namespace DraftingSuite
         private TextBox annotationLayersBox;
         private TextBox mleaderDeleteLayersBox;
         private TextBox mleaderKeepTextLayersBox;
+        private CheckBox invertKeepTextLayersCheck;
         private TextBox flattenSkipBlocksBox;
         private TextBox tinyTextBox;
         private CheckBox explodeNamedBlocksCheck;
@@ -174,6 +175,8 @@ namespace DraftingSuite
             AddHelpText(text, "Deletes DBText or MText whose text height is below this value before mleader conversion. Text at exactly this height is kept.");
             mleaderDeleteLayersBox = AddMultiline(text, "Delete text layers");
             mleaderKeepTextLayersBox = AddMultiline(text, "Keep as text layers");
+            invertKeepTextLayersCheck = AddCheck(text, "Invert keep-as-text list");
+            AddHelpText(text, "When off, matching layers are kept as text. When on, non-matching layers are kept as text and only matching layers can be deleted by text cleanup or converted to mleaders.");
             offsetXBox = AddText(text, "MLeader offset X");
             offsetYBox = AddText(text, "MLeader offset Y");
             tabs.TabPages.Add(CreateTabPage("Text && MLeaders", text));
@@ -334,6 +337,7 @@ namespace DraftingSuite
             annotationLayersBox.Text = JoinLines(settings.AnnotationLayerPatterns);
             mleaderDeleteLayersBox.Text = JoinLines(settings.MLeaderDeleteLayerPatterns);
             mleaderKeepTextLayersBox.Text = JoinLines(settings.MLeaderKeepTextLayerPatterns);
+            invertKeepTextLayersCheck.Checked = settings.InvertKeepTextLayerPatterns;
             flattenSkipBlocksBox.Text = JoinLines(settings.FlattenSkipBlockNamePatterns);
             tinyTextBox.Text = FormatDouble(settings.TinyTextDeleteHeight);
             explodeNamedBlocksCheck.Checked = settings.ExplodeNamedBlocks;
@@ -376,6 +380,7 @@ namespace DraftingSuite
                 MLeaderIgnoreLayerPatterns = SplitLines(mleaderDeleteLayersBox.Text),
                 MLeaderDeleteLayerPatterns = SplitLines(mleaderDeleteLayersBox.Text),
                 MLeaderKeepTextLayerPatterns = SplitLines(mleaderKeepTextLayersBox.Text),
+                InvertKeepTextLayerPatterns = invertKeepTextLayersCheck.Checked,
                 FlattenSkipBlockNamePatterns = SplitLines(flattenSkipBlocksBox.Text),
                 TinyTextDeleteHeight = tinyTextHeight,
                 ExplodeNamedBlocks = explodeNamedBlocksCheck.Checked,

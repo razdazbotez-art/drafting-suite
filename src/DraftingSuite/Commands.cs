@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.34";
+        private const string Version = "0.1.35";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -177,7 +177,7 @@ namespace DraftingSuite
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
                 annotationIds.AddRange(candidateIds.Where(id => IsEligibleSourceAnnotation(GetEntityOrNull(tr, id), settings)));
 
-                DeleteTinyText(tr, annotationIds, result, settings.TinyTextDeleteHeight);
+                DeleteTinyText(tr, annotationIds, result, settings);
 
                 if (settings.ConvertTextToMleaders)
                     ConvertTextToMleaders(db, tr, annotationIds, result, settings);
@@ -429,14 +429,14 @@ namespace DraftingSuite
                 TextInfo text = ReadTextInfo(entity);
                 if (text == null)
                     continue;
+                if (ShouldKeepTextByLayer(text.Layer, settings))
+                {
+                    result.TextKeptByLayer++;
+                    continue;
+                }
                 if (MatchesAnyWildcard(text.Layer, settings.MLeaderDeleteLayerPatterns))
                 {
                     DeleteTextByLayerRule(entity, id, result);
-                    continue;
-                }
-                if (MatchesAnyWildcard(text.Layer, settings.MLeaderKeepTextLayerPatterns))
-                {
-                    result.TextKeptByLayer++;
                     continue;
                 }
 
@@ -520,8 +520,9 @@ namespace DraftingSuite
             }
         }
 
-        private static void DeleteTinyText(Transaction tr, IEnumerable<ObjectId> annotationIds, FbkPrepResult result, double maxHeight)
+        private static void DeleteTinyText(Transaction tr, IEnumerable<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings)
         {
+            double maxHeight = settings.TinyTextDeleteHeight;
             if (maxHeight <= 0.0)
                 return;
 
@@ -530,6 +531,8 @@ namespace DraftingSuite
                 Entity entity = GetEntityOrNull(tr, id);
                 TextInfo text = ReadTextInfo(entity);
                 if (text == null || text.Height >= maxHeight)
+                    continue;
+                if (ShouldKeepTextByLayer(text.Layer, settings))
                     continue;
 
                 try
@@ -568,6 +571,16 @@ namespace DraftingSuite
             leader.AddFirstVertex(lineIndex, arrowPoint);
             leader.AddLastVertex(lineIndex, textPoint);
             return leader;
+        }
+
+        private static bool ShouldKeepTextByLayer(string layerName, DraftingSuiteSettings settings)
+        {
+            bool hasKeepRules = HasWildcardRules(settings.MLeaderKeepTextLayerPatterns);
+            if (!hasKeepRules)
+                return false;
+
+            bool matchesKeepRule = MatchesAnyWildcard(layerName, settings.MLeaderKeepTextLayerPatterns);
+            return settings.InvertKeepTextLayerPatterns ? !matchesKeepRule : matchesKeepRule;
         }
 
         private static List<ObjectId> CollectFlattenIds(List<ObjectId> candidateIds, List<ObjectId> createdIds, Database db, Transaction tr, DraftingSuiteSettings settings)
