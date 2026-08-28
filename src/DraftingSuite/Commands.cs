@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.28";
+        private const string Version = "0.1.29";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -1186,8 +1186,12 @@ namespace DraftingSuite
                 if (definition == null || definition.IsFromExternalReference || definition.IsLayout)
                     return false;
 
+                string blockName = GetBlockReferenceName(tr, block);
+                if (!string.IsNullOrWhiteSpace(blockName) && !blockName.StartsWith("*", StringComparison.Ordinal))
+                    return false;
+
                 return definition.IsAnonymous ||
-                       (!string.IsNullOrEmpty(definition.Name) && definition.Name.StartsWith("*", StringComparison.Ordinal));
+                       (!string.IsNullOrWhiteSpace(definition.Name) && definition.Name.StartsWith("*", StringComparison.Ordinal));
             }
             catch
             {
@@ -1226,6 +1230,9 @@ namespace DraftingSuite
 
                 BlockReference block = tr.GetObject(id, OpenMode.ForRead, false) as BlockReference;
                 if (block == null || block.IsErased || block.BlockTableRecord.IsNull)
+                    return false;
+
+                if (HasNamedDynamicDefinition(tr, block))
                     return false;
 
                 return !IsAnonymousBlockReference(tr, id);

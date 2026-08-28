@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.28`
+Current version: `0.1.29`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -17,7 +17,7 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 
 1. Extract visible COGO point display graphics into ordinary CAD entities.
 2. Delete inserted Civil 3D survey network drawing objects when enabled.
-3. Explode regular block references in the generated extraction output before anonymous block bursting, using the configured pass count.
+3. Explode regular block references in the generated extraction output before anonymous block bursting, using the configured pass count. Named dynamic blocks are skipped.
 4. Burst nested anonymous block references until no anonymous blocks remain, up to the configured pass limit. Named dynamic blocks are not treated as anonymous even when AutoCAD stores their current state in an anonymous internal block record. Visible attributes are converted to text, attribute definitions are discarded, and the source block is kept if no replacement objects are created.
 5. Explode regular block references again after bursting, using the configured pass count. The source block is kept if no replacement objects are created.
 6. Preserve generated block output instead of deleting it by layer rule.
