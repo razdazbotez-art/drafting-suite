@@ -183,11 +183,11 @@ namespace DraftingSuite
             flattenSkipBlocksBox = AddMultiline(layers, "Do not flatten blocks");
             AddHelpText(layers, "Wildcard block-name list skipped by flattening, such as BL_PT_*.");
             protectedLayersBox = AddMultiline(layers, "COGO point layers");
-            AddHelpText(layers, "Wildcard layer list for COGO point graphics and point-related source objects. Saved with presets for standards reference; FBK Prep does not filter by this list.");
+            AddHelpText(layers, "Wildcard layer list for COGO point source graphics. FBK Prep discards generated extraction objects on these layers, matching XCOGO's final freeze before copyback.");
             resultLayersBox = AddMultiline(layers, "Groundshot point layers");
-            AddHelpText(layers, "Wildcard layer list for groundshot point graphics. Saved with presets for standards reference; FBK Prep does not delete extracted graphics by this list.");
+            AddHelpText(layers, "Wildcard layer list for groundshot point graphics. FBK Prep uses these layers for the anonymous block burst stage.");
             annotationLayersBox = AddMultiline(layers, "Annotation layers to keep");
-            AddHelpText(layers, "Wildcard layer list for text, mtext, mleaders, leaders, dimensions, and blocks. Saved with presets for standards reference; FBK Prep currently uses object type.");
+            AddHelpText(layers, "Wildcard layer list for extracted text, mtext, mleaders, leaders, dimensions, and blocks that are eligible for the post-burst explode stage.");
             tabs.TabPages.Add(CreateTabPage("Layers && Flatten", layers));
 
             TableLayoutPanel cogo = CreateFieldsTable();

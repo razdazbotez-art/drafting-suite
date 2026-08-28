@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.25";
+        private const string Version = "0.1.26";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -64,6 +64,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Survey networks deleted: {0}", result.SurveyNetworksDeleted);
                     ed.WriteMessage("\n  Block references exploded: {0}", result.BlockReferencesExploded);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
+                    ed.WriteMessage("\n  Extraction source/zero-layer objects discarded: {0}", result.ExtractionSourceObjectsDiscarded);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
                     ed.WriteMessage("\n  Text/MText deleted by layer: {0}", result.TextDeletedByLayer);
@@ -165,9 +166,10 @@ namespace DraftingSuite
                 ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesBeforeBurst, "before burst");
 
                 if (settings.BurstInserts)
-                    BurstAnonymousBlocks(db, tr, createdIds, result, settings.MaxAnonymousBurstPasses);
+                    BurstAnonymousBlocks(db, tr, createdIds, result, settings.MaxAnonymousBurstPasses, settings.ResultLayerPatterns);
 
-                ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesAfterBurst, "after burst");
+                ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesAfterBurst, "after burst", MergeLayerPatterns(settings.ResultLayerPatterns, settings.AnnotationLayerPatterns));
+                DiscardExtractionSourceLayers(tr, createdIds, result, settings);
 
                 if (settings.ConvertLinesTo3dPolylines)
                     ConvertLinesTo3dPolylines(tr, candidateIds, result);
@@ -263,7 +265,7 @@ namespace DraftingSuite
             return createdIds;
         }
 
-        private static void BurstAnonymousBlocks(Database db, Transaction tr, List<ObjectId> candidateIds, FbkPrepResult result, int maxPasses)
+        private static void BurstAnonymousBlocks(Database db, Transaction tr, List<ObjectId> candidateIds, FbkPrepResult result, int maxPasses, IEnumerable<string> layerPatterns)
         {
             if (maxPasses <= 0)
                 return;
@@ -276,6 +278,7 @@ namespace DraftingSuite
             {
                 List<ObjectId> anonymousBlocks = candidateIds
                     .Where(id => IsAnonymousBlockReference(tr, id))
+                    .Where(id => MatchesOptionalWildcardRules(GetEntityLayerOrEmpty(tr, id), layerPatterns))
                     .ToList();
 
                 if (anonymousBlocks.Count == 0)
@@ -297,6 +300,11 @@ namespace DraftingSuite
                         {
                             Entity entity = obj as Entity;
                             if (entity == null)
+                            {
+                                obj.Dispose();
+                                continue;
+                            }
+                            if (entity is AttributeDefinition)
                             {
                                 obj.Dispose();
                                 continue;
@@ -332,11 +340,11 @@ namespace DraftingSuite
                     return;
             }
 
-            if (candidateIds.Any(id => IsAnonymousBlockReference(tr, id)))
+            if (candidateIds.Any(id => IsAnonymousBlockReference(tr, id) && MatchesOptionalWildcardRules(GetEntityLayerOrEmpty(tr, id), layerPatterns)))
                 result.Errors.Add("Anonymous block burst stopped after max passes: " + maxPasses);
         }
 
-        private static void ExplodeBlockReferences(Database db, Transaction tr, List<ObjectId> candidateIds, FbkPrepResult result, int passes, string phase)
+        private static void ExplodeBlockReferences(Database db, Transaction tr, List<ObjectId> candidateIds, FbkPrepResult result, int passes, string phase, IEnumerable<string> layerPatterns = null)
         {
             if (passes <= 0)
                 return;
@@ -349,6 +357,7 @@ namespace DraftingSuite
             {
                 List<ObjectId> blocks = candidateIds
                     .Where(id => IsRegularBlockReference(tr, id))
+                    .Where(id => MatchesOptionalWildcardRules(GetEntityLayerOrEmpty(tr, id), layerPatterns))
                     .ToList();
 
                 if (blocks.Count == 0)
@@ -369,6 +378,11 @@ namespace DraftingSuite
                         {
                             Entity entity = obj as Entity;
                             if (entity == null)
+                            {
+                                obj.Dispose();
+                                continue;
+                            }
+                            if (entity is AttributeDefinition)
                             {
                                 obj.Dispose();
                                 continue;
@@ -395,6 +409,36 @@ namespace DraftingSuite
                 if (explodedThisPass == 0)
                     return;
             }
+        }
+
+        private static void DiscardExtractionSourceLayers(Transaction tr, List<ObjectId> createdIds, FbkPrepResult result, DraftingSuiteSettings settings)
+        {
+            foreach (ObjectId id in createdIds.ToList())
+            {
+                Entity entity = GetEntityOrNull(tr, id);
+                if (entity == null || entity.IsErased)
+                    continue;
+
+                if (!IsExtractionSourceLayer(entity.Layer, settings))
+                    continue;
+
+                try
+                {
+                    entity.UpgradeOpen();
+                    entity.Erase();
+                    result.ExtractionSourceObjectsDiscarded++;
+                }
+                catch (System.Exception ex)
+                {
+                    result.Errors.Add("Extraction source discard skipped " + id.Handle + ": " + ex.Message);
+                }
+            }
+        }
+
+        private static bool IsExtractionSourceLayer(string layerName, DraftingSuiteSettings settings)
+        {
+            return string.Equals(layerName, "0", StringComparison.OrdinalIgnoreCase)
+                || MatchesAnyWildcard(layerName, settings.ProtectedSourceLayerPatterns);
         }
 
         private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings)
@@ -1326,6 +1370,30 @@ namespace DraftingSuite
             return false;
         }
 
+        private static bool MatchesOptionalWildcardRules(string value, IEnumerable<string> patterns)
+        {
+            return !HasWildcardRules(patterns) || MatchesAnyWildcard(value, patterns);
+        }
+
+        private static bool HasWildcardRules(IEnumerable<string> patterns)
+        {
+            return patterns != null && patterns.Any(pattern => !string.IsNullOrWhiteSpace(pattern));
+        }
+
+        private static IEnumerable<string> MergeLayerPatterns(IEnumerable<string> first, IEnumerable<string> second)
+        {
+            return (first ?? Enumerable.Empty<string>())
+                .Concat(second ?? Enumerable.Empty<string>())
+                .Where(pattern => !string.IsNullOrWhiteSpace(pattern))
+                .ToList();
+        }
+
+        private static string GetEntityLayerOrEmpty(Transaction tr, ObjectId id)
+        {
+            Entity entity = GetEntityOrNull(tr, id);
+            return entity?.Layer ?? string.Empty;
+        }
+
         private static Point3d ToTargetZ(Point3d point, double targetElevation)
         {
             return new Point3d(point.X, point.Y, targetElevation);
@@ -1363,6 +1431,7 @@ namespace DraftingSuite
             public int SurveyNetworksDeleted { get; set; }
             public int BlockReferencesExploded { get; set; }
             public int AnonymousBlocksBurst { get; set; }
+            public int ExtractionSourceObjectsDiscarded { get; set; }
             public int LinesConvertedTo3dPolylines { get; set; }
             public int TinyTextDeleted { get; set; }
             public int TextDeletedByLayer { get; set; }
