@@ -24,7 +24,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.3";
+        private const string Version = "0.1.4";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -56,6 +56,8 @@ namespace DraftingSuite
                     FbkPrepResult result = RunFbkPrep(doc.Database, ed, scope, settings);
                     ed.WriteMessage("\nFBK Prep complete.");
                     ed.WriteMessage("\n  Scope: {0}", scope == FbkPrepScope.Selection ? "selection" : "entire drawing");
+                    if (!string.IsNullOrWhiteSpace(settings.PresetName))
+                        ed.WriteMessage("\n  Preset: {0}", settings.PresetName);
                     ed.WriteMessage("\n  COGO points found: {0}", result.CogoPointsFound);
                     ed.WriteMessage("\n  COGO display objects created: {0}", result.CogoDisplayObjectsCreated);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);

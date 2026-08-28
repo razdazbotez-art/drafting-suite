@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
+using System.Linq;
 using System.Text;
 
 namespace DraftingSuite
@@ -64,6 +65,15 @@ namespace DraftingSuite
         [DataMember(Order = 17)]
         public int MaxAnonymousBurstPasses { get; set; } = 8;
 
+        [DataMember(Order = 18)]
+        public string PresetName { get; set; } = string.Empty;
+
+        [DataMember(Order = 19)]
+        public string PresetFolderPath { get; set; } = string.Empty;
+
+        [DataMember(Order = 20)]
+        public string DefaultPresetName { get; set; } = string.Empty;
+
         public static string SettingsPath
         {
             get
@@ -73,7 +83,34 @@ namespace DraftingSuite
             }
         }
 
+        public static string DefaultPresetFolderPath
+        {
+            get
+            {
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                return Path.Combine(localAppData, "Civil3D_Plugins", SettingsFolderName, "Presets");
+            }
+        }
+
         public static DraftingSuiteSettings Load()
+        {
+            DraftingSuiteSettings active = LoadActiveSettings();
+            if (!string.IsNullOrWhiteSpace(active.DefaultPresetName))
+            {
+                DraftingSuiteSettings preset = LoadPreset(active.DefaultPresetName, active.PresetFolderPath);
+                if (preset != null)
+                {
+                    preset.PresetFolderPath = active.PresetFolderPath;
+                    preset.DefaultPresetName = active.DefaultPresetName;
+                    preset.PresetName = active.DefaultPresetName;
+                    return Normalize(preset);
+                }
+            }
+
+            return active;
+        }
+
+        public static DraftingSuiteSettings LoadActiveSettings()
         {
             try
             {
@@ -103,17 +140,131 @@ namespace DraftingSuite
             return new DraftingSuiteSettings();
         }
 
+        public static string[] ListPresetNames(string folderPath)
+        {
+            try
+            {
+                folderPath = NormalizePresetFolderPath(folderPath);
+                if (!Directory.Exists(folderPath))
+                    return new string[0];
+
+                return Directory.GetFiles(folderPath, "*.json")
+                    .Select(file => Path.GetFileNameWithoutExtension(file))
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+            catch
+            {
+                return new string[0];
+            }
+        }
+
+        public static DraftingSuiteSettings LoadPreset(string presetName, string folderPath)
+        {
+            try
+            {
+                string path = GetPresetPath(presetName, folderPath);
+                if (!File.Exists(path))
+                    return null;
+
+                using (FileStream stream = File.OpenRead(path))
+                {
+                    DataContractJsonSerializer serializer = new DataContractJsonSerializer(typeof(DraftingSuiteSettings));
+                    DraftingSuiteSettings settings = serializer.ReadObject(stream) as DraftingSuiteSettings;
+                    settings = Normalize(settings);
+                    settings.PresetName = Path.GetFileNameWithoutExtension(path);
+                    settings.PresetFolderPath = NormalizePresetFolderPath(folderPath);
+                    return settings;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public void SavePreset(string presetName)
+        {
+            string path = GetPresetPath(presetName, PresetFolderPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            DraftingSuiteSettings settings = Normalize(this);
+            settings.PresetName = Path.GetFileNameWithoutExtension(path);
+            settings.WriteToPath(path);
+        }
+
+        public static bool DeletePreset(string presetName, string folderPath)
+        {
+            try
+            {
+                string path = GetPresetPath(presetName, folderPath);
+                if (File.Exists(path))
+                    File.Delete(path);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool RenamePreset(string oldName, string newName, string folderPath)
+        {
+            try
+            {
+                string oldPath = GetPresetPath(oldName, folderPath);
+                string newPath = GetPresetPath(newName, folderPath);
+                if (!File.Exists(oldPath) || File.Exists(newPath))
+                    return false;
+
+                File.Move(oldPath, newPath);
+                DraftingSuiteSettings renamed = LoadPreset(newName, folderPath);
+                if (renamed != null)
+                    renamed.SavePreset(newName);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public void Save()
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
             DraftingSuiteSettings settings = Normalize(this);
+            settings.WriteToPath(SettingsPath);
+        }
+
+        private void WriteToPath(string path)
+        {
             using (MemoryStream stream = new MemoryStream())
             {
                 DataContractJsonSerializer serializer = new DataContractJsonSerializer(typeof(DraftingSuiteSettings));
-                serializer.WriteObject(stream, settings);
+                serializer.WriteObject(stream, this);
                 string json = Encoding.UTF8.GetString(stream.ToArray());
-                File.WriteAllText(SettingsPath, json, Encoding.UTF8);
+                File.WriteAllText(path, json, Encoding.UTF8);
             }
+        }
+
+        private static string GetPresetPath(string presetName, string folderPath)
+        {
+            string cleanName = SanitizePresetName(presetName);
+            return Path.Combine(NormalizePresetFolderPath(folderPath), cleanName + ".json");
+        }
+
+        private static string SanitizePresetName(string presetName)
+        {
+            string cleanName = (presetName ?? string.Empty).Trim();
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+                cleanName = cleanName.Replace(invalid, '_');
+
+            return string.IsNullOrWhiteSpace(cleanName) ? "Preset" : cleanName;
+        }
+
+        private static string NormalizePresetFolderPath(string folderPath)
+        {
+            return string.IsNullOrWhiteSpace(folderPath) ? DefaultPresetFolderPath : folderPath.Trim();
         }
 
         private static DraftingSuiteSettings Normalize(DraftingSuiteSettings settings)
@@ -137,6 +288,9 @@ namespace DraftingSuite
                 settings.MaxAnonymousBurstPasses = 1;
             if (settings.TinyTextDeleteHeight < 0.0)
                 settings.TinyTextDeleteHeight = 0.0;
+            settings.PresetName = settings.PresetName ?? string.Empty;
+            settings.PresetFolderPath = NormalizePresetFolderPath(settings.PresetFolderPath);
+            settings.DefaultPresetName = settings.DefaultPresetName ?? string.Empty;
             return settings;
         }
     }
