@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.33";
+        private const string Version = "0.1.34";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -65,7 +65,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Block references exploded: {0}", result.BlockReferencesExploded);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
-                    ed.WriteMessage("\n  Tiny DBText deleted: {0}", result.TinyTextDeleted);
+                    ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
                     ed.WriteMessage("\n  Text/MText deleted by layer: {0}", result.TextDeletedByLayer);
                     ed.WriteMessage("\n  Text/MText kept by layer: {0}", result.TextKeptByLayer);
                     ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders);
@@ -528,8 +528,8 @@ namespace DraftingSuite
             foreach (ObjectId id in new HashSet<ObjectId>(annotationIds))
             {
                 Entity entity = GetEntityOrNull(tr, id);
-                DBText dbText = entity as DBText;
-                if (dbText == null || dbText.Height > maxHeight)
+                TextInfo text = ReadTextInfo(entity);
+                if (text == null || text.Height >= maxHeight)
                     continue;
 
                 try
