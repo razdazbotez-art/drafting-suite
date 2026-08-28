@@ -8,8 +8,6 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
-using CivilApplication = Autodesk.Civil.ApplicationServices.CivilApplication;
-using CogoPoint = Autodesk.Civil.DatabaseServices.CogoPoint;
 
 namespace DraftingSuite
 {
@@ -27,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.11";
+        private const string Version = "0.1.12";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -640,32 +638,17 @@ namespace DraftingSuite
 
                 try
                 {
-                    CogoPoint cogoPoint = tr.GetObject(id, OpenMode.ForWrite, false) as CogoPoint;
+                    obj = tr.GetObject(id, OpenMode.ForWrite, false);
                     bool pointStyleSet = false;
                     bool labelStyleSet = false;
-                    if (cogoPoint != null)
+                    if (!pointStyleId.IsNull)
                     {
-                        if (!pointStyleId.IsNull)
-                        {
-                            cogoPoint.StyleId = pointStyleId;
-                            pointStyleSet = true;
-                        }
-
-                        if (!labelStyleId.IsNull)
-                        {
-                            cogoPoint.LabelStyleId = labelStyleId;
-                            labelStyleSet = true;
-                        }
+                        pointStyleSet = TrySetObjectIdProperty(obj, pointStyleId, "StyleId", "PointStyleId");
                     }
-                    else
+
+                    if (!labelStyleId.IsNull)
                     {
-                        obj.UpgradeOpen();
-                        pointStyleSet = TrySetObjectIdProperty(obj, pointStyleId, "StyleId", "PointStyleId") ||
-                                        TrySetStringProperty(obj, "StyleName", settings.CogoPointStyleName) ||
-                                        TrySetStringProperty(obj, "PointStyleName", settings.CogoPointStyleName);
-                        labelStyleSet = TrySetObjectIdProperty(obj, labelStyleId, "LabelStyleId", "PointLabelStyleId") ||
-                                        TrySetStringProperty(obj, "LabelStyleName", settings.CogoLabelStyleName) ||
-                                        TrySetStringProperty(obj, "PointLabelStyleName", settings.CogoLabelStyleName);
+                        labelStyleSet = TrySetObjectIdProperty(obj, labelStyleId, "LabelStyleId", "PointLabelStyleId");
                     }
 
                     if (pointStyleSet || labelStyleSet)
@@ -708,14 +691,6 @@ namespace DraftingSuite
 
         private static object GetActiveCivilDocument()
         {
-            try
-            {
-                return CivilApplication.ActiveDocument;
-            }
-            catch
-            {
-            }
-
             foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 Type type = assembly.GetType("Autodesk.Civil.ApplicationServices.CivilApplication", false);
@@ -751,11 +726,11 @@ namespace DraftingSuite
                     return ObjectId.Null;
             }
 
-            ObjectId namedMatch = FindStyleIdByNameIndexer(tr, current, styleName, styleKind);
+            ObjectId namedMatch = FindStyleIdByNameIndexer(tr, current, styleName, styleKind, true);
             if (!namedMatch.IsNull)
                 return namedMatch;
 
-            return FindStyleIdInEnumerable(tr, current, styleName, styleKind);
+            return FindStyleIdInEnumerable(tr, current, styleName, styleKind, true);
         }
 
         private static ObjectId FindStyleIdRecursive(Transaction tr, object value, string styleName, string styleKind, HashSet<object> visited, int depth)
@@ -773,11 +748,11 @@ namespace DraftingSuite
                 return ObjectId.Null;
             }
 
-            ObjectId namedMatch = FindStyleIdByNameIndexer(tr, value, styleName, styleKind);
+            ObjectId namedMatch = FindStyleIdByNameIndexer(tr, value, styleName, styleKind, false);
             if (!namedMatch.IsNull)
                 return namedMatch;
 
-            ObjectId enumerableMatch = FindStyleIdInEnumerable(tr, value, styleName, styleKind);
+            ObjectId enumerableMatch = FindStyleIdInEnumerable(tr, value, styleName, styleKind, false);
             if (!enumerableMatch.IsNull)
                 return enumerableMatch;
 
@@ -811,7 +786,7 @@ namespace DraftingSuite
             return ObjectId.Null;
         }
 
-        private static ObjectId FindStyleIdByNameIndexer(Transaction tr, object value, string styleName, string styleKind)
+        private static ObjectId FindStyleIdByNameIndexer(Transaction tr, object value, string styleName, string styleKind, bool trustCollection)
         {
             if (value == null)
                 return ObjectId.Null;
@@ -827,7 +802,7 @@ namespace DraftingSuite
                 try
                 {
                     object item = property.GetValue(value, new object[] { styleName });
-                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind);
+                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind, trustCollection);
                     if (!id.IsNull)
                         return id;
                 }
@@ -851,7 +826,7 @@ namespace DraftingSuite
                 try
                 {
                     object item = method.Invoke(value, new object[] { styleName });
-                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind);
+                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind, trustCollection);
                     if (!id.IsNull)
                         return id;
                 }
@@ -863,7 +838,7 @@ namespace DraftingSuite
             return ObjectId.Null;
         }
 
-        private static ObjectId FindStyleIdInEnumerable(Transaction tr, object value, string styleName, string styleKind)
+        private static ObjectId FindStyleIdInEnumerable(Transaction tr, object value, string styleName, string styleKind, bool trustCollection)
         {
             System.Collections.IEnumerable enumerable = value as System.Collections.IEnumerable;
             if (enumerable == null || value is string)
@@ -873,13 +848,13 @@ namespace DraftingSuite
             {
                 foreach (object item in enumerable)
                 {
-                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind);
+                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind, trustCollection);
                     if (!id.IsNull)
                         return id;
 
                     if (item is string name && string.Equals(name, styleName, StringComparison.OrdinalIgnoreCase))
                     {
-                        id = FindStyleIdByNameIndexer(tr, value, styleName, styleKind);
+                        id = FindStyleIdByNameIndexer(tr, value, styleName, styleKind, true);
                         if (!id.IsNull)
                             return id;
                     }
@@ -892,26 +867,26 @@ namespace DraftingSuite
             return ObjectId.Null;
         }
 
-        private static ObjectId GetStyleObjectId(Transaction tr, object value, string styleName, string styleKind)
+        private static ObjectId GetStyleObjectId(Transaction tr, object value, string styleName, string styleKind, bool trustCollection)
         {
             if (value == null)
                 return ObjectId.Null;
 
             if (value is ObjectId id)
-                return TryStyleMatches(tr, id, styleName, styleKind) ? id : ObjectId.Null;
+                return trustCollection || TryStyleMatches(tr, id, styleName, styleKind) ? id : ObjectId.Null;
 
             if (value is DBObject dbObject)
             {
                 id = dbObject.ObjectId;
-                return TryStyleMatches(tr, id, styleName, styleKind) ? id : ObjectId.Null;
+                return trustCollection || TryStyleMatches(tr, id, styleName, styleKind) ? id : ObjectId.Null;
             }
 
             id = GetObjectIdPropertyValue(value, "ObjectId");
-            if (!id.IsNull && TryStyleMatches(tr, id, styleName, styleKind))
+            if (!id.IsNull && (trustCollection || TryStyleMatches(tr, id, styleName, styleKind)))
                 return id;
 
             id = GetObjectIdPropertyValue(value, "Id");
-            if (!id.IsNull && TryStyleMatches(tr, id, styleName, styleKind))
+            if (!id.IsNull && (trustCollection || TryStyleMatches(tr, id, styleName, styleKind)))
                 return id;
 
             object name = GetPropertyValue(value, "Name");
