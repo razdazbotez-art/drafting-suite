@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.8";
+        private const string Version = "0.1.9";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -67,6 +67,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Text/MText kept by layer: {0}", result.TextKeptByLayer);
                     ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders);
                     ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
+                    ed.WriteMessage("\n  Blocks skipped by flatten rule: {0}", result.BlocksSkippedByFlattenRule);
                     ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
                     if (result.CogoPointStyleSkipped > 0)
                         ed.WriteMessage("\n  COGO style changes skipped: {0}", result.CogoPointStyleSkipped);
@@ -139,15 +140,17 @@ namespace DraftingSuite
                     : CollectModelSpaceEntityIds(db, tr);
 
                 List<ObjectId> cogoIds = new List<ObjectId>();
+                AddCivilDocumentCogoPointIds(cogoIds);
                 foreach (ObjectId id in candidateIds)
                 {
-                    Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                    Entity entity = GetEntityOrNull(tr, id);
                     if (!IsCogoPoint(entity))
                         continue;
 
-                    cogoIds.Add(id);
-                    result.CogoPointsFound++;
+                    if (!cogoIds.Contains(id))
+                        cogoIds.Add(id);
                 }
+                result.CogoPointsFound = cogoIds.Count;
 
                 List<ObjectId> createdIds = settings.ExtractCogoDisplayGraphics
                     ? ExplodeCogoDisplayGraphics(db, tr, cogoIds, result)
@@ -167,7 +170,7 @@ namespace DraftingSuite
                 if (settings.FlattenAnnotation)
                 {
                     List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr);
-                    FlattenObjects(tr, flattenIds, result, settings.FlattenElevation);
+                    FlattenObjects(tr, flattenIds, result, settings);
                 }
 
                 if (settings.RestyleCogoPoints)
@@ -428,7 +431,73 @@ namespace DraftingSuite
             return ids.ToList();
         }
 
-        private static void FlattenObjects(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result, double targetElevation)
+        private static void AddCivilDocumentCogoPointIds(List<ObjectId> cogoIds)
+        {
+            object civilDocument = GetActiveCivilDocument();
+            object cogoPoints = GetPropertyValue(civilDocument, "CogoPoints");
+            AddObjectIdsFromValue(cogoIds, cogoPoints);
+
+            object countValue = GetPropertyValue(cogoPoints, "Count");
+            if (!(countValue is int count) || count <= 0)
+                return;
+
+            foreach (PropertyInfo property in cogoPoints.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                ParameterInfo[] indexParameters = property.GetIndexParameters();
+                if (indexParameters.Length != 1 || indexParameters[0].ParameterType != typeof(int))
+                    continue;
+
+                for (int i = 0; i < count; i++)
+                {
+                    try
+                    {
+                        AddObjectIdsFromValue(cogoIds, property.GetValue(cogoPoints, new object[] { i }));
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
+        private static void AddObjectIdsFromValue(List<ObjectId> objectIds, object value)
+        {
+            if (value == null)
+                return;
+
+            if (value is ObjectId id)
+            {
+                if (!id.IsNull && !objectIds.Contains(id))
+                    objectIds.Add(id);
+                return;
+            }
+
+            if (value is DBObject dbObject)
+            {
+                ObjectId objectId = dbObject.ObjectId;
+                if (!objectId.IsNull && !objectIds.Contains(objectId))
+                    objectIds.Add(objectId);
+                return;
+            }
+
+            if (value is string)
+                return;
+
+            System.Collections.IEnumerable enumerable = value as System.Collections.IEnumerable;
+            if (enumerable == null)
+                return;
+
+            try
+            {
+                foreach (object item in enumerable)
+                    AddObjectIdsFromValue(objectIds, item);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void FlattenObjects(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result, DraftingSuiteSettings settings)
         {
             foreach (ObjectId id in ids)
             {
@@ -438,13 +507,58 @@ namespace DraftingSuite
 
                 try
                 {
-                    if (FlattenEntity(entity, targetElevation))
+                    if (ShouldSkipFlatten(tr, entity, settings.FlattenSkipBlockNamePatterns))
+                    {
+                        result.BlocksSkippedByFlattenRule++;
+                        continue;
+                    }
+
+                    if (FlattenEntity(entity, settings.FlattenElevation))
                         result.ObjectsFlattened++;
                 }
                 catch (System.Exception ex)
                 {
                     result.Errors.Add("Flatten skipped " + id.Handle + ": " + ex.Message);
                 }
+            }
+        }
+
+        private static bool ShouldSkipFlatten(Transaction tr, Entity entity, IEnumerable<string> blockNamePatterns)
+        {
+            BlockReference block = entity as BlockReference;
+            if (block == null)
+                return false;
+
+            return MatchesAnyWildcard(GetBlockReferenceName(tr, block), blockNamePatterns);
+        }
+
+        private static string GetBlockReferenceName(Transaction tr, BlockReference block)
+        {
+            string dynamicName = GetBlockTableRecordName(tr, GetObjectIdPropertyValue(block, "DynamicBlockTableRecord"));
+            if (!string.IsNullOrWhiteSpace(dynamicName) && !dynamicName.StartsWith("*", StringComparison.Ordinal))
+                return dynamicName;
+
+            string name = GetBlockTableRecordName(tr, block.BlockTableRecord);
+            if (!string.IsNullOrWhiteSpace(name))
+                return name;
+
+            object reflectedName = GetPropertyValue(block, "Name");
+            return Convert.ToString(reflectedName) ?? string.Empty;
+        }
+
+        private static string GetBlockTableRecordName(Transaction tr, ObjectId id)
+        {
+            try
+            {
+                if (id.IsNull || id.IsErased)
+                    return string.Empty;
+
+                BlockTableRecord record = tr.GetObject(id, OpenMode.ForRead, false) as BlockTableRecord;
+                return record?.Name ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
@@ -508,10 +622,15 @@ namespace DraftingSuite
 
         private static void RestyleCogoPoints(Transaction tr, IEnumerable<ObjectId> cogoIds, FbkPrepResult result, DraftingSuiteSettings settings)
         {
+            List<ObjectId> ids = cogoIds == null ? new List<ObjectId>() : cogoIds.ToList();
             ObjectId pointStyleId = FindCivilStyleId(tr, settings.CogoPointStyleName, "PointStyle");
             ObjectId labelStyleId = FindCivilStyleId(tr, settings.CogoLabelStyleName, "LabelStyle");
+            if (ids.Count > 0 && pointStyleId.IsNull)
+                result.Errors.Add("COGO point style not found: " + settings.CogoPointStyleName);
+            if (ids.Count > 0 && labelStyleId.IsNull)
+                result.Errors.Add("COGO label style not found: " + settings.CogoLabelStyleName);
 
-            foreach (ObjectId id in cogoIds)
+            foreach (ObjectId id in ids)
             {
                 Entity entity = GetEntityOrNull(tr, id);
                 if (!IsCogoPoint(entity))
@@ -552,6 +671,12 @@ namespace DraftingSuite
             if (stylesRoot == null)
                 return ObjectId.Null;
 
+            ObjectId exactPathMatch = styleKind == "PointStyle"
+                ? FindStyleIdByPath(tr, civilDocument, styleName.Trim(), styleKind, "Styles", "PointStyles")
+                : FindStyleIdByPath(tr, civilDocument, styleName.Trim(), styleKind, "Styles", "LabelStyles", "PointLabelStyles", "LabelStyles");
+            if (!exactPathMatch.IsNull)
+                return exactPathMatch;
+
             HashSet<object> visited = new HashSet<object>();
             return FindStyleIdRecursive(tr, stylesRoot, styleName.Trim(), styleKind, visited, 0);
         }
@@ -570,6 +695,23 @@ namespace DraftingSuite
             }
 
             return null;
+        }
+
+        private static ObjectId FindStyleIdByPath(Transaction tr, object root, string styleName, string styleKind, params string[] propertyPath)
+        {
+            object current = root;
+            foreach (string propertyName in propertyPath)
+            {
+                current = GetPropertyValue(current, propertyName);
+                if (current == null)
+                    return ObjectId.Null;
+            }
+
+            ObjectId namedMatch = FindStyleIdByNameIndexer(tr, current, styleName, styleKind);
+            if (!namedMatch.IsNull)
+                return namedMatch;
+
+            return FindStyleIdInEnumerable(tr, current, styleName, styleKind);
         }
 
         private static ObjectId FindStyleIdRecursive(Transaction tr, object value, string styleName, string styleKind, HashSet<object> visited, int depth)
@@ -709,6 +851,12 @@ namespace DraftingSuite
             {
                 return null;
             }
+        }
+
+        private static ObjectId GetObjectIdPropertyValue(object target, string propertyName)
+        {
+            object value = GetPropertyValue(target, propertyName);
+            return value is ObjectId id ? id : ObjectId.Null;
         }
 
         private static bool IsDraftingAnnotation(Entity entity)
@@ -888,6 +1036,7 @@ namespace DraftingSuite
             public int TextKeptByLayer { get; set; }
             public int TextConvertedToMleaders { get; set; }
             public int ObjectsFlattened { get; set; }
+            public int BlocksSkippedByFlattenRule { get; set; }
             public int CogoPointsRestyled { get; set; }
             public int CogoPointStyleSkipped { get; set; }
             public List<string> Errors { get; } = new List<string>();

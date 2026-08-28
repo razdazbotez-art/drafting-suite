@@ -83,6 +83,9 @@ namespace DraftingSuite
         [DataMember(Order = 23)]
         public List<string> MLeaderKeepTextLayerPatterns { get; set; } = new List<string>();
 
+        [DataMember(Order = 24)]
+        public List<string> FlattenSkipBlockNamePatterns { get; set; } = new List<string> { "BL_PT_*" };
+
         public static string SettingsPath
         {
             get
@@ -297,6 +300,8 @@ namespace DraftingSuite
                     : new List<string> { "*-PNT" };
             if (settings.MLeaderKeepTextLayerPatterns == null)
                 settings.MLeaderKeepTextLayerPatterns = new List<string>();
+            if (settings.FlattenSkipBlockNamePatterns == null)
+                settings.FlattenSkipBlockNamePatterns = new List<string> { "BL_PT_*" };
             if (settings.ExplodePassesBeforeBurst < 0)
                 settings.ExplodePassesBeforeBurst = 0;
             if (settings.ExplodePassesAfterBurst < 0)

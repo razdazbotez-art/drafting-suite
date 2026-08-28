@@ -26,6 +26,7 @@ namespace DraftingSuite
         private TextBox annotationLayersBox;
         private TextBox mleaderDeleteLayersBox;
         private TextBox mleaderKeepTextLayersBox;
+        private TextBox flattenSkipBlocksBox;
         private TextBox tinyTextBox;
         private NumericUpDown explodeBeforeBox;
         private CheckBox burstCheck;
@@ -155,6 +156,7 @@ namespace DraftingSuite
             annotationLayersBox = AddMultiline(fields, "Annotation layers to keep");
             mleaderDeleteLayersBox = AddMultiline(fields, "Delete text layers");
             mleaderKeepTextLayersBox = AddMultiline(fields, "Keep as text layers");
+            flattenSkipBlocksBox = AddMultiline(fields, "Do not flatten blocks");
             tinyTextBox = AddText(fields, "Tiny text max height");
             explodeBeforeBox = AddNumber(fields, "Explode passes before burst");
             burstCheck = AddCheck(fields, "Burst anonymous blocks");
@@ -247,6 +249,7 @@ namespace DraftingSuite
             annotationLayersBox.Text = JoinLines(settings.AnnotationLayerPatterns);
             mleaderDeleteLayersBox.Text = JoinLines(settings.MLeaderDeleteLayerPatterns);
             mleaderKeepTextLayersBox.Text = JoinLines(settings.MLeaderKeepTextLayerPatterns);
+            flattenSkipBlocksBox.Text = JoinLines(settings.FlattenSkipBlockNamePatterns);
             tinyTextBox.Text = FormatDouble(settings.TinyTextDeleteHeight);
             explodeBeforeBox.Value = ClampDecimal(settings.ExplodePassesBeforeBurst, explodeBeforeBox.Minimum, explodeBeforeBox.Maximum);
             burstCheck.Checked = settings.BurstInserts;
@@ -285,6 +288,7 @@ namespace DraftingSuite
                 MLeaderIgnoreLayerPatterns = SplitLines(mleaderDeleteLayersBox.Text),
                 MLeaderDeleteLayerPatterns = SplitLines(mleaderDeleteLayersBox.Text),
                 MLeaderKeepTextLayerPatterns = SplitLines(mleaderKeepTextLayersBox.Text),
+                FlattenSkipBlockNamePatterns = SplitLines(flattenSkipBlocksBox.Text),
                 TinyTextDeleteHeight = tinyTextHeight,
                 ExplodePassesBeforeBurst = (int)explodeBeforeBox.Value,
                 BurstInserts = burstCheck.Checked,
