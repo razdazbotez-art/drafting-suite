@@ -24,7 +24,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.2";
+        private const string Version = "0.1.3";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -58,6 +58,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Scope: {0}", scope == FbkPrepScope.Selection ? "selection" : "entire drawing");
                     ed.WriteMessage("\n  COGO points found: {0}", result.CogoPointsFound);
                     ed.WriteMessage("\n  COGO display objects created: {0}", result.CogoDisplayObjectsCreated);
+                    ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
                     ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders);
                     ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
                     ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
@@ -146,8 +147,11 @@ namespace DraftingSuite
                     ? ExplodeCogoDisplayGraphics(db, tr, cogoIds, result)
                     : new List<ObjectId>();
 
+                if (settings.BurstInserts)
+                    BurstAnonymousBlocks(db, tr, createdIds, result, settings.MaxAnonymousBurstPasses);
+
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
-                annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotation(tr.GetObject(id, OpenMode.ForRead, false) as Entity)));
+                annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotation(GetEntityOrNull(tr, id))));
 
                 if (settings.ConvertTextToMleaders)
                     ConvertTextToMleaders(db, tr, annotationIds, result, settings);
@@ -235,6 +239,70 @@ namespace DraftingSuite
             return createdIds;
         }
 
+        private static void BurstAnonymousBlocks(Database db, Transaction tr, List<ObjectId> candidateIds, FbkPrepResult result, int maxPasses)
+        {
+            if (maxPasses <= 0)
+                return;
+
+            BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+            BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+            HashSet<ObjectId> knownIds = new HashSet<ObjectId>(candidateIds);
+
+            for (int pass = 0; pass < maxPasses; pass++)
+            {
+                List<ObjectId> anonymousBlocks = candidateIds
+                    .Where(id => IsAnonymousBlockReference(tr, id))
+                    .ToList();
+
+                if (anonymousBlocks.Count == 0)
+                    return;
+
+                int burstThisPass = 0;
+                foreach (ObjectId id in anonymousBlocks)
+                {
+                    BlockReference block = tr.GetObject(id, OpenMode.ForRead, false) as BlockReference;
+                    if (block == null || block.IsErased)
+                        continue;
+
+                    try
+                    {
+                        DBObjectCollection exploded = new DBObjectCollection();
+                        block.Explode(exploded);
+                        foreach (DBObject obj in exploded)
+                        {
+                            Entity entity = obj as Entity;
+                            if (entity == null)
+                            {
+                                obj.Dispose();
+                                continue;
+                            }
+
+                            entity.SetDatabaseDefaults(db);
+                            ObjectId createdId = modelSpace.AppendEntity(entity);
+                            tr.AddNewlyCreatedDBObject(entity, true);
+                            if (knownIds.Add(createdId))
+                                candidateIds.Add(createdId);
+                        }
+
+                        block.UpgradeOpen();
+                        block.Erase();
+                        result.AnonymousBlocksBurst++;
+                        burstThisPass++;
+                    }
+                    catch (System.Exception ex)
+                    {
+                        result.Errors.Add("Anonymous block burst skipped " + id.Handle + ": " + ex.Message);
+                    }
+                }
+
+                if (burstThisPass == 0)
+                    return;
+            }
+
+            if (candidateIds.Any(id => IsAnonymousBlockReference(tr, id)))
+                result.Errors.Add("Anonymous block burst stopped after max passes: " + maxPasses);
+        }
+
         private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings)
         {
             BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
@@ -243,8 +311,8 @@ namespace DraftingSuite
 
             foreach (ObjectId id in uniqueIds.ToList())
             {
-                Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
-                TextInfo text = ReadTextInfo(entity);
+                    Entity entity = GetEntityOrNull(tr, id);
+                    TextInfo text = ReadTextInfo(entity);
                 if (text == null)
                     continue;
 
@@ -295,7 +363,7 @@ namespace DraftingSuite
             HashSet<ObjectId> ids = new HashSet<ObjectId>(createdIds);
             foreach (ObjectId id in candidateIds)
             {
-                Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                Entity entity = GetEntityOrNull(tr, id);
                 if (IsDraftingAnnotation(entity))
                     ids.Add(id);
             }
@@ -307,7 +375,7 @@ namespace DraftingSuite
         {
             foreach (ObjectId id in ids)
             {
-                Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                Entity entity = GetEntityOrNull(tr, id);
                 if (entity == null || entity.IsErased)
                     continue;
 
@@ -385,7 +453,7 @@ namespace DraftingSuite
         {
             foreach (ObjectId id in cogoIds)
             {
-                Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                Entity entity = GetEntityOrNull(tr, id);
                 if (!IsCogoPoint(entity))
                     continue;
 
@@ -420,6 +488,45 @@ namespace DraftingSuite
                    entity is MLeader ||
                    entity is Leader ||
                    entity is Dimension;
+        }
+
+        private static bool IsAnonymousBlockReference(Transaction tr, ObjectId id)
+        {
+            try
+            {
+                if (id.IsErased)
+                    return false;
+
+                BlockReference block = tr.GetObject(id, OpenMode.ForRead, false) as BlockReference;
+                if (block == null || block.IsErased || block.BlockTableRecord.IsNull)
+                    return false;
+
+                BlockTableRecord definition = tr.GetObject(block.BlockTableRecord, OpenMode.ForRead, false) as BlockTableRecord;
+                if (definition == null || definition.IsFromExternalReference || definition.IsLayout)
+                    return false;
+
+                return definition.IsAnonymous ||
+                       (!string.IsNullOrEmpty(definition.Name) && definition.Name.StartsWith("*", StringComparison.Ordinal));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static Entity GetEntityOrNull(Transaction tr, ObjectId id)
+        {
+            try
+            {
+                if (id.IsNull || id.IsErased)
+                    return null;
+
+                return tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static bool IsCogoPoint(Entity entity)
@@ -499,6 +606,7 @@ namespace DraftingSuite
         {
             public int CogoPointsFound { get; set; }
             public int CogoDisplayObjectsCreated { get; set; }
+            public int AnonymousBlocksBurst { get; set; }
             public int TextConvertedToMleaders { get; set; }
             public int ObjectsFlattened { get; set; }
             public int CogoPointsRestyled { get; set; }

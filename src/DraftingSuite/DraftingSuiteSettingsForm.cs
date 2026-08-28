@@ -24,6 +24,7 @@ namespace DraftingSuite
         private NumericUpDown explodeBeforeBox;
         private CheckBox burstCheck;
         private NumericUpDown explodeAfterBox;
+        private NumericUpDown maxAnonymousBurstPassesBox;
 
         private DraftingSuiteSettingsForm()
         {
@@ -65,7 +66,8 @@ namespace DraftingSuite
             annotationLayersBox = AddMultiline(fields, "Annotation layers to keep");
             tinyTextBox = AddText(fields, "Tiny text max height");
             explodeBeforeBox = AddNumber(fields, "Explode passes before burst");
-            burstCheck = AddCheck(fields, "Burst inserts");
+            burstCheck = AddCheck(fields, "Burst anonymous blocks");
+            maxAnonymousBurstPassesBox = AddNumber(fields, "Max anonymous burst passes");
             explodeAfterBox = AddNumber(fields, "Explode passes after burst");
 
             FlowLayoutPanel buttons = new FlowLayoutPanel
@@ -164,6 +166,7 @@ namespace DraftingSuite
             tinyTextBox.Text = FormatDouble(settings.TinyTextDeleteHeight);
             explodeBeforeBox.Value = ClampDecimal(settings.ExplodePassesBeforeBurst, explodeBeforeBox.Minimum, explodeBeforeBox.Maximum);
             burstCheck.Checked = settings.BurstInserts;
+            maxAnonymousBurstPassesBox.Value = ClampDecimal(settings.MaxAnonymousBurstPasses, maxAnonymousBurstPassesBox.Minimum, maxAnonymousBurstPassesBox.Maximum);
             explodeAfterBox.Value = ClampDecimal(settings.ExplodePassesAfterBurst, explodeAfterBox.Minimum, explodeAfterBox.Maximum);
         }
 
@@ -194,6 +197,7 @@ namespace DraftingSuite
                 TinyTextDeleteHeight = tinyTextHeight,
                 ExplodePassesBeforeBurst = (int)explodeBeforeBox.Value,
                 BurstInserts = burstCheck.Checked,
+                MaxAnonymousBurstPasses = (int)maxAnonymousBurstPassesBox.Value,
                 ExplodePassesAfterBurst = (int)explodeAfterBox.Value
             };
 

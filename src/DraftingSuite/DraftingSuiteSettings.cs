@@ -61,6 +61,9 @@ namespace DraftingSuite
         [DataMember(Order = 16)]
         public int ExplodePassesAfterBurst { get; set; } = 1;
 
+        [DataMember(Order = 17)]
+        public int MaxAnonymousBurstPasses { get; set; } = 8;
+
         public static string SettingsPath
         {
             get
@@ -130,6 +133,8 @@ namespace DraftingSuite
                 settings.ExplodePassesBeforeBurst = 0;
             if (settings.ExplodePassesAfterBurst < 0)
                 settings.ExplodePassesAfterBurst = 0;
+            if (settings.MaxAnonymousBurstPasses < 1)
+                settings.MaxAnonymousBurstPasses = 1;
             if (settings.TinyTextDeleteHeight < 0.0)
                 settings.TinyTextDeleteHeight = 0.0;
             return settings;
