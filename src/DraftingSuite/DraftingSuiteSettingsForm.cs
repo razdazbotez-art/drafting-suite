@@ -39,9 +39,9 @@ namespace DraftingSuite
         private DraftingSuiteSettingsForm()
         {
             Text = "Drafting Suite Settings";
-            Width = 620;
-            Height = 760;
-            MinimumSize = new System.Drawing.Size(560, 620);
+            Width = 700;
+            Height = 560;
+            MinimumSize = new System.Drawing.Size(620, 500);
             StartPosition = FormStartPosition.CenterScreen;
 
             TableLayoutPanel root = new TableLayoutPanel
@@ -75,12 +75,20 @@ namespace DraftingSuite
 
         private Control BuildPresetPanel()
         {
+            GroupBox group = new GroupBox
+            {
+                Text = "Presets",
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(10, 8, 10, 10)
+            };
+
             TableLayoutPanel panel = new TableLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 ColumnCount = 3,
-                Padding = new Padding(0, 0, 0, 10)
+                Padding = new Padding(0)
             };
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -133,43 +141,83 @@ namespace DraftingSuite
             panel.Controls.Add(new Label(), 0, 3);
             panel.Controls.Add(presetButtons, 1, 3);
             panel.Controls.Add(new Label(), 2, 3);
-            return panel;
+            group.Controls.Add(panel);
+            return group;
         }
 
         private Control BuildFieldsPanel()
         {
+            TabControl tabs = new TabControl
+            {
+                Dock = DockStyle.Fill
+            };
+
+            TableLayoutPanel workflow = CreateFieldsTable();
+            extractCogoCheck = AddCheck(workflow, "Extract COGO graphics");
+            deleteSurveyNetworksCheck = AddCheck(workflow, "Delete survey network");
+            convertLinesCheck = AddCheck(workflow, "Convert lines to 3D polylines");
+            restyleCheck = AddCheck(workflow, "Restyle COGO points");
+            explodeBeforeBox = AddNumber(workflow, "Explode passes before burst");
+            burstCheck = AddCheck(workflow, "Burst anonymous blocks");
+            maxAnonymousBurstPassesBox = AddNumber(workflow, "Max anonymous burst passes");
+            explodeAfterBox = AddNumber(workflow, "Explode passes after burst");
+            tabs.TabPages.Add(CreateTabPage("Workflow", workflow));
+
+            TableLayoutPanel text = CreateFieldsTable();
+            convertTextCheck = AddCheck(text, "Convert text to mleaders");
+            tinyTextBox = AddText(text, "Tiny text max height");
+            mleaderDeleteLayersBox = AddMultiline(text, "Delete text layers");
+            mleaderKeepTextLayersBox = AddMultiline(text, "Keep as text layers");
+            offsetXBox = AddText(text, "MLeader offset X");
+            offsetYBox = AddText(text, "MLeader offset Y");
+            tabs.TabPages.Add(CreateTabPage("Text && MLeaders", text));
+
+            TableLayoutPanel layers = CreateFieldsTable();
+            flattenCheck = AddCheck(layers, "Flatten annotation");
+            flattenElevationBox = AddText(layers, "Flatten elevation");
+            flattenSkipBlocksBox = AddMultiline(layers, "Do not flatten blocks");
+            protectedLayersBox = AddMultiline(layers, "Protected source layers");
+            resultLayersBox = AddMultiline(layers, "Result layers to keep");
+            annotationLayersBox = AddMultiline(layers, "Annotation layers to keep");
+            tabs.TabPages.Add(CreateTabPage("Layers && Flatten", layers));
+
+            TableLayoutPanel cogo = CreateFieldsTable();
+            pointStyleBox = AddText(cogo, "COGO point style");
+            labelStyleBox = AddText(cogo, "COGO label style");
+            tabs.TabPages.Add(CreateTabPage("COGO", cogo));
+
+            return tabs;
+        }
+
+        private static TableLayoutPanel CreateFieldsTable()
+        {
             TableLayoutPanel fields = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill,
-                AutoScroll = true,
-                ColumnCount = 2
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 2,
+                Padding = new Padding(10)
             };
             fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
             fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-
-            extractCogoCheck = AddCheck(fields, "Extract COGO graphics");
-            convertTextCheck = AddCheck(fields, "Convert text to mleaders");
-            flattenCheck = AddCheck(fields, "Flatten annotation");
-            restyleCheck = AddCheck(fields, "Restyle COGO points");
-            convertLinesCheck = AddCheck(fields, "Convert lines to 3D polylines");
-            deleteSurveyNetworksCheck = AddCheck(fields, "Delete survey network");
-            offsetXBox = AddText(fields, "MLeader offset X");
-            offsetYBox = AddText(fields, "MLeader offset Y");
-            flattenElevationBox = AddText(fields, "Flatten elevation");
-            pointStyleBox = AddText(fields, "COGO point style");
-            labelStyleBox = AddText(fields, "COGO label style");
-            protectedLayersBox = AddMultiline(fields, "Protected source layers");
-            resultLayersBox = AddMultiline(fields, "Result layers to keep");
-            annotationLayersBox = AddMultiline(fields, "Annotation layers to keep");
-            mleaderDeleteLayersBox = AddMultiline(fields, "Delete text layers");
-            mleaderKeepTextLayersBox = AddMultiline(fields, "Keep as text layers");
-            flattenSkipBlocksBox = AddMultiline(fields, "Do not flatten blocks");
-            tinyTextBox = AddText(fields, "Tiny text max height");
-            explodeBeforeBox = AddNumber(fields, "Explode passes before burst");
-            burstCheck = AddCheck(fields, "Burst anonymous blocks");
-            maxAnonymousBurstPassesBox = AddNumber(fields, "Max anonymous burst passes");
-            explodeAfterBox = AddNumber(fields, "Explode passes after burst");
             return fields;
+        }
+
+        private static TabPage CreateTabPage(string title, Control content)
+        {
+            Panel scrollHost = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+            scrollHost.Controls.Add(content);
+
+            TabPage page = new TabPage(title)
+            {
+                Padding = new Padding(0)
+            };
+            page.Controls.Add(scrollHost);
+            return page;
         }
 
         private Control BuildDialogButtons()
