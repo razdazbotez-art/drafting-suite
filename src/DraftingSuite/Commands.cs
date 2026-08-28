@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.39";
+        private const string Version = "0.1.40";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -174,7 +174,7 @@ namespace DraftingSuite
                     ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesAfterBurst, "after burst");
 
                 if (settings.ConvertLinesTo3dPolylines)
-                    ConvertLinesTo3dPolylines(tr, candidateIds, result, settings);
+                    ConvertLinesTo3dPolylines(tr, candidateIds.Concat(createdIds), result, settings);
 
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
                 annotationIds.AddRange(candidateIds.Where(id => IsEligibleSourceAnnotation(GetEntityOrNull(tr, id), settings)));
