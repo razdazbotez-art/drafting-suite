@@ -74,6 +74,9 @@ namespace DraftingSuite
         [DataMember(Order = 20)]
         public string DefaultPresetName { get; set; } = string.Empty;
 
+        [DataMember(Order = 21)]
+        public List<string> MLeaderIgnoreLayerPatterns { get; set; } = new List<string> { "*-PNT" };
+
         public static string SettingsPath
         {
             get
@@ -280,6 +283,8 @@ namespace DraftingSuite
                 settings.ResultLayerPatterns = new List<string> { "*RNDM", "*NODE-TOPO*", "*TOPO-SPOT*" };
             if (settings.AnnotationLayerPatterns == null || settings.AnnotationLayerPatterns.Count == 0)
                 settings.AnnotationLayerPatterns = new List<string> { "*-ANNO*", "*-TEXT*", "*-A", "*0", "*IDEN*" };
+            if (settings.MLeaderIgnoreLayerPatterns == null)
+                settings.MLeaderIgnoreLayerPatterns = new List<string> { "*-PNT" };
             if (settings.ExplodePassesBeforeBurst < 0)
                 settings.ExplodePassesBeforeBurst = 0;
             if (settings.ExplodePassesAfterBurst < 0)

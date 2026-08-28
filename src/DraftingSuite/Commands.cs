@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -24,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.5";
+        private const string Version = "0.1.6";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -62,6 +63,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  COGO display objects created: {0}", result.CogoDisplayObjectsCreated);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
+                    ed.WriteMessage("\n  Text/MText ignored by layer: {0}", result.TextIgnoredByLayer);
                     ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders);
                     ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
                     ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
@@ -320,6 +322,11 @@ namespace DraftingSuite
                 TextInfo text = ReadTextInfo(entity);
                 if (text == null)
                     continue;
+                if (MatchesAnyWildcard(text.Layer, settings.MLeaderIgnoreLayerPatterns))
+                {
+                    result.TextIgnoredByLayer++;
+                    continue;
+                }
 
                 try
                 {
@@ -803,6 +810,24 @@ namespace DraftingSuite
             return false;
         }
 
+        private static bool MatchesAnyWildcard(string value, IEnumerable<string> patterns)
+        {
+            if (string.IsNullOrWhiteSpace(value) || patterns == null)
+                return false;
+
+            foreach (string pattern in patterns)
+            {
+                if (string.IsNullOrWhiteSpace(pattern))
+                    continue;
+
+                string regex = "^" + Regex.Escape(pattern.Trim()).Replace("\\*", ".*").Replace("\\?", ".") + "$";
+                if (Regex.IsMatch(value, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+                    return true;
+            }
+
+            return false;
+        }
+
         private static Point3d ToTargetZ(Point3d point, double targetElevation)
         {
             return new Point3d(point.X, point.Y, targetElevation);
@@ -839,6 +864,7 @@ namespace DraftingSuite
             public int CogoDisplayObjectsCreated { get; set; }
             public int AnonymousBlocksBurst { get; set; }
             public int TinyTextDeleted { get; set; }
+            public int TextIgnoredByLayer { get; set; }
             public int TextConvertedToMleaders { get; set; }
             public int ObjectsFlattened { get; set; }
             public int CogoPointsRestyled { get; set; }
