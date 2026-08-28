@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.0`
+Current version: `0.1.1`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -15,7 +15,7 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 `DSFBKPREP` is based on the current FBK drafting workflow:
 
 1. Extract visible COGO point display graphics into ordinary CAD entities.
-2. Convert text and mtext annotation to mleaders where an automatic target can be found.
+2. Convert text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
 3. Flatten drafting annotation to elevation `0`.
 4. Set Civil 3D COGO point style and label style to `Standard` when those style properties are available.
 

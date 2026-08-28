@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -25,9 +24,9 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.0";
+        private const string Version = "0.1.1";
         private const string StandardStyleName = "Standard";
-        private const double TextTargetSearchDistance = 75.0;
+        private const double DefaultMLeaderTextOffset = 15.0;
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -65,8 +64,6 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
                     if (result.CogoPointStyleSkipped > 0)
                         ed.WriteMessage("\n  COGO style changes skipped: {0}", result.CogoPointStyleSkipped);
-                    if (result.TextSkippedNoTarget > 0)
-                        ed.WriteMessage("\n  Text/MText skipped with no nearby target: {0}", result.TextSkippedNoTarget);
                     if (result.Errors.Count > 0)
                     {
                         ed.WriteMessage("\n  Warnings:");
@@ -129,7 +126,6 @@ namespace DraftingSuite
                     ? selectedIds
                     : CollectModelSpaceEntityIds(db, tr);
 
-                List<CogoTarget> targets = new List<CogoTarget>();
                 List<ObjectId> cogoIds = new List<ObjectId>();
                 foreach (ObjectId id in candidateIds)
                 {
@@ -139,17 +135,14 @@ namespace DraftingSuite
 
                     cogoIds.Add(id);
                     result.CogoPointsFound++;
-                    if (TryGetPoint(entity, out Point3d point))
-                        targets.Add(new CogoTarget(id, point));
                 }
 
                 List<ObjectId> createdIds = ExplodeCogoDisplayGraphics(db, tr, cogoIds, result);
-                AppendCreatedBlockTargets(tr, createdIds, targets);
 
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
                 annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotation(tr.GetObject(id, OpenMode.ForRead, false) as Entity)));
 
-                ConvertTextToMleaders(db, tr, annotationIds, targets, result);
+                ConvertTextToMleaders(db, tr, annotationIds, result);
 
                 List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr);
                 FlattenObjects(tr, flattenIds, result);
@@ -230,21 +223,8 @@ namespace DraftingSuite
             return createdIds;
         }
 
-        private static void AppendCreatedBlockTargets(Transaction tr, IEnumerable<ObjectId> ids, List<CogoTarget> targets)
+        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result)
         {
-            foreach (ObjectId id in ids)
-            {
-                BlockReference block = tr.GetObject(id, OpenMode.ForRead, false) as BlockReference;
-                if (block != null)
-                    targets.Add(new CogoTarget(id, block.Position));
-            }
-        }
-
-        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, List<CogoTarget> targets, FbkPrepResult result)
-        {
-            if (targets.Count == 0)
-                return;
-
             BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
             BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
             HashSet<ObjectId> uniqueIds = new HashSet<ObjectId>(annotationIds);
@@ -256,17 +236,10 @@ namespace DraftingSuite
                 if (text == null)
                     continue;
 
-                CogoTarget target = FindNearestTarget(text.Position, targets);
-                if (target == null || target.Point.DistanceTo(text.Position) > TextTargetSearchDistance)
-                {
-                    result.TextSkippedNoTarget++;
-                    continue;
-                }
-
                 try
                 {
                     entity.UpgradeOpen();
-                    MLeader leader = CreateMLeader(db, text, target.Point);
+                    MLeader leader = CreateMLeader(db, text);
                     ObjectId leaderId = modelSpace.AppendEntity(leader);
                     tr.AddNewlyCreatedDBObject(leader, true);
                     entity.Erase();
@@ -280,13 +253,15 @@ namespace DraftingSuite
             }
         }
 
-        private static MLeader CreateMLeader(Database db, TextInfo text, Point3d target)
+        private static MLeader CreateMLeader(Database db, TextInfo text)
         {
+            Point3d arrowPoint = ToZeroZ(text.Position);
+            Point3d textPoint = new Point3d(arrowPoint.X + DefaultMLeaderTextOffset, arrowPoint.Y + DefaultMLeaderTextOffset, 0.0);
             MText mText = new MText
             {
                 Contents = text.Contents,
                 TextHeight = text.Height > 0.0 ? text.Height : db.Textsize,
-                Location = ToZeroZ(text.Position),
+                Location = textPoint,
                 Rotation = text.Rotation,
                 Attachment = AttachmentPoint.MiddleLeft
             };
@@ -298,8 +273,8 @@ namespace DraftingSuite
             leader.MText = mText;
             int leaderIndex = leader.AddLeader();
             int lineIndex = leader.AddLeaderLine(leaderIndex);
-            leader.AddFirstVertex(lineIndex, ToZeroZ(target));
-            leader.AddLastVertex(lineIndex, ToZeroZ(text.Position));
+            leader.AddFirstVertex(lineIndex, arrowPoint);
+            leader.AddLastVertex(lineIndex, textPoint);
             return leader;
         }
 
@@ -464,51 +439,6 @@ namespace DraftingSuite
             return null;
         }
 
-        private static CogoTarget FindNearestTarget(Point3d point, List<CogoTarget> targets)
-        {
-            CogoTarget nearest = null;
-            double nearestDistance = double.MaxValue;
-            foreach (CogoTarget target in targets)
-            {
-                double distance = point.DistanceTo(target.Point);
-                if (distance >= nearestDistance)
-                    continue;
-
-                nearest = target;
-                nearestDistance = distance;
-            }
-
-            return nearest;
-        }
-
-        private static bool TryGetPoint(object value, out Point3d point)
-        {
-            point = Point3d.Origin;
-            if (value == null)
-                return false;
-
-            foreach (string name in new[] { "Location", "Position" })
-            {
-                object property = ReadProperty(value, name);
-                if (property is Point3d point3d)
-                {
-                    point = point3d;
-                    return true;
-                }
-            }
-
-            double? easting = ReadDoubleProperty(value, "Easting");
-            double? northing = ReadDoubleProperty(value, "Northing");
-            double elevation = ReadDoubleProperty(value, "Elevation") ?? 0.0;
-            if (easting.HasValue && northing.HasValue)
-            {
-                point = new Point3d(easting.Value, northing.Value, elevation);
-                return true;
-            }
-
-            return false;
-        }
-
         private static bool TrySetStringProperty(object target, string propertyName, string value)
         {
             if (target == null)
@@ -522,35 +452,6 @@ namespace DraftingSuite
             return true;
         }
 
-        private static object ReadProperty(object value, string name)
-        {
-            try
-            {
-                PropertyInfo property = value.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
-                return property?.GetValue(value, null);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static double? ReadDoubleProperty(object value, string name)
-        {
-            object property = ReadProperty(value, name);
-            if (property == null)
-                return null;
-
-            try
-            {
-                return Convert.ToDouble(property, CultureInfo.InvariantCulture);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
         private static Point3d ToZeroZ(Point3d point)
         {
             return new Point3d(point.X, point.Y, 0.0);
@@ -561,18 +462,6 @@ namespace DraftingSuite
             Canceled,
             EntireDrawing,
             Selection
-        }
-
-        private sealed class CogoTarget
-        {
-            public CogoTarget(ObjectId id, Point3d point)
-            {
-                Id = id;
-                Point = point;
-            }
-
-            public ObjectId Id { get; }
-            public Point3d Point { get; }
         }
 
         private sealed class TextInfo
@@ -598,7 +487,6 @@ namespace DraftingSuite
             public int CogoPointsFound { get; set; }
             public int CogoDisplayObjectsCreated { get; set; }
             public int TextConvertedToMleaders { get; set; }
-            public int TextSkippedNoTarget { get; set; }
             public int ObjectsFlattened { get; set; }
             public int CogoPointsRestyled { get; set; }
             public int CogoPointStyleSkipped { get; set; }
