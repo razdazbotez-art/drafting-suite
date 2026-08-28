@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.23";
+        private const string Version = "0.1.24";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -253,7 +253,7 @@ namespace DraftingSuite
                             continue;
                         }
 
-                        entity.SetDatabaseDefaults(db);
+                        ApplyInheritedLayer(entity, source.Layer);
                         ObjectId createdId = modelSpace.AppendEntity(entity);
                         tr.AddNewlyCreatedDBObject(entity, true);
                         createdIds.Add(createdId);
@@ -308,7 +308,7 @@ namespace DraftingSuite
                                 continue;
                             }
 
-                            entity.SetDatabaseDefaults(db);
+                            ApplyInheritedLayer(entity, block.Layer);
                             ObjectId createdId = modelSpace.AppendEntity(entity);
                             tr.AddNewlyCreatedDBObject(entity, true);
                             if (knownIds.Add(createdId))
@@ -380,7 +380,7 @@ namespace DraftingSuite
                                 continue;
                             }
 
-                            entity.SetDatabaseDefaults(db);
+                            ApplyInheritedLayer(entity, block.Layer);
                             ObjectId createdId = modelSpace.AppendEntity(entity);
                             tr.AddNewlyCreatedDBObject(entity, true);
                             if (knownIds.Add(createdId))
@@ -483,6 +483,15 @@ namespace DraftingSuite
             return created;
         }
 
+        private static void ApplyInheritedLayer(Entity entity, string parentLayer)
+        {
+            if (entity == null || string.IsNullOrWhiteSpace(parentLayer))
+                return;
+
+            if (string.Equals(entity.Layer, "0", StringComparison.OrdinalIgnoreCase))
+                entity.Layer = parentLayer;
+        }
+
         private static void PruneExtractedGraphicsByLayer(Transaction tr, List<ObjectId> createdIds, FbkPrepResult result, DraftingSuiteSettings settings)
         {
             bool hasResultRules = HasWildcardRules(settings.ResultLayerPatterns);
@@ -494,6 +503,8 @@ namespace DraftingSuite
             {
                 Entity entity = GetEntityOrNull(tr, id);
                 if (entity == null || entity.IsErased)
+                    continue;
+                if (entity is BlockReference)
                     continue;
 
                 bool keepAsResult = hasResultRules && MatchesAnyWildcard(entity.Layer, settings.ResultLayerPatterns);
