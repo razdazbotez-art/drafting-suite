@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.17";
+        private const string Version = "0.1.18";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -62,6 +62,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  COGO points found: {0}", result.CogoPointsFound);
                     ed.WriteMessage("\n  COGO display objects created: {0}", result.CogoDisplayObjectsCreated);
                     ed.WriteMessage("\n  Survey networks deleted: {0}", result.SurveyNetworksDeleted);
+                    ed.WriteMessage("\n  Block references exploded: {0}", result.BlockReferencesExploded);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
@@ -161,8 +162,12 @@ namespace DraftingSuite
                 if (settings.DeleteSurveyNetworks)
                     DeleteSurveyNetworks(tr, candidateIds, result);
 
+                ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesBeforeBurst, "before burst");
+
                 if (settings.BurstInserts)
                     BurstAnonymousBlocks(db, tr, createdIds, result, settings.MaxAnonymousBurstPasses);
+
+                ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesAfterBurst, "after burst");
 
                 if (settings.ConvertLinesTo3dPolylines)
                     ConvertLinesTo3dPolylines(tr, candidateIds, result);
@@ -320,6 +325,67 @@ namespace DraftingSuite
 
             if (candidateIds.Any(id => IsAnonymousBlockReference(tr, id)))
                 result.Errors.Add("Anonymous block burst stopped after max passes: " + maxPasses);
+        }
+
+        private static void ExplodeBlockReferences(Database db, Transaction tr, List<ObjectId> candidateIds, FbkPrepResult result, int passes, string phase)
+        {
+            if (passes <= 0)
+                return;
+
+            BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+            BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+            HashSet<ObjectId> knownIds = new HashSet<ObjectId>(candidateIds);
+
+            for (int pass = 0; pass < passes; pass++)
+            {
+                List<ObjectId> blocks = candidateIds
+                    .Where(id => IsRegularBlockReference(tr, id))
+                    .ToList();
+
+                if (blocks.Count == 0)
+                    return;
+
+                int explodedThisPass = 0;
+                foreach (ObjectId id in blocks)
+                {
+                    BlockReference block = tr.GetObject(id, OpenMode.ForRead, false) as BlockReference;
+                    if (block == null || block.IsErased)
+                        continue;
+
+                    try
+                    {
+                        DBObjectCollection exploded = new DBObjectCollection();
+                        block.Explode(exploded);
+                        foreach (DBObject obj in exploded)
+                        {
+                            Entity entity = obj as Entity;
+                            if (entity == null)
+                            {
+                                obj.Dispose();
+                                continue;
+                            }
+
+                            entity.SetDatabaseDefaults(db);
+                            ObjectId createdId = modelSpace.AppendEntity(entity);
+                            tr.AddNewlyCreatedDBObject(entity, true);
+                            if (knownIds.Add(createdId))
+                                candidateIds.Add(createdId);
+                        }
+
+                        block.UpgradeOpen();
+                        block.Erase();
+                        result.BlockReferencesExploded++;
+                        explodedThisPass++;
+                    }
+                    catch (System.Exception ex)
+                    {
+                        result.Errors.Add("Block explode " + phase + " skipped " + id.Handle + ": " + ex.Message);
+                    }
+                }
+
+                if (explodedThisPass == 0)
+                    return;
+            }
         }
 
         private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings)
@@ -1050,6 +1116,25 @@ namespace DraftingSuite
             }
         }
 
+        private static bool IsRegularBlockReference(Transaction tr, ObjectId id)
+        {
+            try
+            {
+                if (id.IsErased)
+                    return false;
+
+                BlockReference block = tr.GetObject(id, OpenMode.ForRead, false) as BlockReference;
+                if (block == null || block.IsErased || block.BlockTableRecord.IsNull)
+                    return false;
+
+                return !IsAnonymousBlockReference(tr, id);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static Entity GetEntityOrNull(Transaction tr, ObjectId id)
         {
             try
@@ -1218,6 +1303,7 @@ namespace DraftingSuite
             public int CogoPointsFound { get; set; }
             public int CogoDisplayObjectsCreated { get; set; }
             public int SurveyNetworksDeleted { get; set; }
+            public int BlockReferencesExploded { get; set; }
             public int AnonymousBlocksBurst { get; set; }
             public int LinesConvertedTo3dPolylines { get; set; }
             public int TinyTextDeleted { get; set; }

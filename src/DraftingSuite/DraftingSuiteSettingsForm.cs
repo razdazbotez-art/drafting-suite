@@ -158,9 +158,11 @@ namespace DraftingSuite
             convertLinesCheck = AddCheck(workflow, "Convert lines to 3D polylines");
             restyleCheck = AddCheck(workflow, "Restyle COGO points");
             explodeBeforeBox = AddNumber(workflow, "Explode passes before burst");
+            AddHelpText(workflow, "Explodes regular block references created from COGO graphics before anonymous blocks are burst.");
             burstCheck = AddCheck(workflow, "Burst anonymous blocks");
             maxAnonymousBurstPassesBox = AddNumber(workflow, "Max anonymous burst passes");
             explodeAfterBox = AddNumber(workflow, "Explode passes after burst");
+            AddHelpText(workflow, "Runs more regular block-reference explode passes after bursting, so nested blocks exposed by the burst can still become editable objects.");
             tabs.TabPages.Add(CreateTabPage("Workflow", workflow));
 
             TableLayoutPanel text = CreateFieldsTable();
@@ -174,11 +176,17 @@ namespace DraftingSuite
 
             TableLayoutPanel layers = CreateFieldsTable();
             flattenCheck = AddCheck(layers, "Flatten annotation");
+            AddHelpText(layers, "Sets supported annotation objects to the flatten elevation during FBK Prep.");
             flattenElevationBox = AddText(layers, "Flatten elevation");
+            AddHelpText(layers, "Elevation value used when flattening annotation, usually 0.");
             flattenSkipBlocksBox = AddMultiline(layers, "Do not flatten blocks");
+            AddHelpText(layers, "Wildcard block-name list skipped by flattening, such as BL_PT_*.");
             protectedLayersBox = AddMultiline(layers, "Protected source layers");
+            AddHelpText(layers, "Saved in presets for extraction rules. FBK Prep does not apply this list yet.");
             resultLayersBox = AddMultiline(layers, "Result layers to keep");
+            AddHelpText(layers, "Saved in presets for extraction rules. FBK Prep does not apply this list yet.");
             annotationLayersBox = AddMultiline(layers, "Annotation layers to keep");
+            AddHelpText(layers, "Saved in presets for annotation filtering. FBK Prep currently uses object type, not this list.");
             tabs.TabPages.Add(CreateTabPage("Layers && Flatten", layers));
 
             TableLayoutPanel cogo = CreateFieldsTable();
@@ -256,6 +264,22 @@ namespace DraftingSuite
             fields.Controls.Add(rowLabel);
             fields.Controls.Add(box);
             return box;
+        }
+
+        private static void AddHelpText(TableLayoutPanel fields, string text)
+        {
+            Label spacer = new Label { AutoSize = true };
+            Label help = new Label
+            {
+                Text = text,
+                AutoSize = true,
+                Dock = DockStyle.Top,
+                ForeColor = System.Drawing.SystemColors.GrayText,
+                Margin = new Padding(0, 0, 0, 8),
+                MaximumSize = new System.Drawing.Size(430, 0)
+            };
+            fields.Controls.Add(spacer);
+            fields.Controls.Add(help);
         }
 
         private TextBox AddMultiline(TableLayoutPanel fields, string label)
