@@ -243,11 +243,25 @@ namespace DraftingSuite
                 DataContractJsonSerializer serializer = new DataContractJsonSerializer(typeof(DraftingSuiteSettings));
                 serializer.WriteObject(stream, this);
                 string json = Encoding.UTF8.GetString(stream.ToArray());
-                File.WriteAllText(path, json, Encoding.UTF8);
+                File.WriteAllText(path, json, new UTF8Encoding(false));
             }
         }
 
         private static DraftingSuiteSettings ReadFromStream(Stream stream)
+        {
+            string json;
+            using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, true))
+            {
+                json = reader.ReadToEnd().TrimStart('\uFEFF');
+            }
+
+            using (MemoryStream jsonStream = new MemoryStream(new UTF8Encoding(false).GetBytes(json)))
+            {
+                return ReadFromCleanStream(jsonStream);
+            }
+        }
+
+        private static DraftingSuiteSettings ReadFromCleanStream(Stream stream)
         {
             DataContractJsonSerializer serializer = new DataContractJsonSerializer(typeof(DraftingSuiteSettings));
             DraftingSuiteSettings settings = serializer.ReadObject(stream) as DraftingSuiteSettings;
