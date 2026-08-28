@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.32`
+Current version: `0.1.33`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -22,7 +22,7 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 5. Optionally explode regular named block references again after bursting, using the configured pass count. This is off by default, and the source block is kept if no replacement objects are created.
 6. Preserve generated block output instead of deleting it by layer rule.
 7. Convert regular AutoCAD line entities to two-vertex 3D polylines.
-8. Delete extracted text and eligible original text at or below the configured tiny text height.
+8. Delete extracted DBText and eligible original DBText at or below the configured tiny text height. MText is not removed by the tiny-text cleanup.
 9. Delete extracted text and eligible original text when its layer matches a configured delete text layer wildcard.
 10. Leave extracted text and eligible original text as-is when its layer matches a configured keep-as-text layer wildcard.
 11. Convert remaining text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.

@@ -171,7 +171,7 @@ namespace DraftingSuite
             TableLayoutPanel text = CreateFieldsTable();
             convertTextCheck = AddCheck(text, "Convert text to mleaders");
             tinyTextBox = AddText(text, "Tiny text max height");
-            AddHelpText(text, "Deletes DBText or MText whose text height is this value or smaller before mleader conversion.");
+            AddHelpText(text, "Deletes DBText whose text height is this value or smaller before mleader conversion. MText is not removed by this cleanup.");
             mleaderDeleteLayersBox = AddMultiline(text, "Delete text layers");
             mleaderKeepTextLayersBox = AddMultiline(text, "Keep as text layers");
             offsetXBox = AddText(text, "MLeader offset X");
