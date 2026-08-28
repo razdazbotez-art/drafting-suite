@@ -24,7 +24,8 @@ namespace DraftingSuite
         private TextBox protectedLayersBox;
         private TextBox resultLayersBox;
         private TextBox annotationLayersBox;
-        private TextBox mleaderIgnoreLayersBox;
+        private TextBox mleaderDeleteLayersBox;
+        private TextBox mleaderKeepTextLayersBox;
         private TextBox tinyTextBox;
         private NumericUpDown explodeBeforeBox;
         private CheckBox burstCheck;
@@ -152,7 +153,8 @@ namespace DraftingSuite
             protectedLayersBox = AddMultiline(fields, "Protected source layers");
             resultLayersBox = AddMultiline(fields, "Result layers to keep");
             annotationLayersBox = AddMultiline(fields, "Annotation layers to keep");
-            mleaderIgnoreLayersBox = AddMultiline(fields, "MLeader ignore layers");
+            mleaderDeleteLayersBox = AddMultiline(fields, "MLeader delete layers");
+            mleaderKeepTextLayersBox = AddMultiline(fields, "MLeader keep as text layers");
             tinyTextBox = AddText(fields, "Tiny text max height");
             explodeBeforeBox = AddNumber(fields, "Explode passes before burst");
             burstCheck = AddCheck(fields, "Burst anonymous blocks");
@@ -243,7 +245,8 @@ namespace DraftingSuite
             protectedLayersBox.Text = JoinLines(settings.ProtectedSourceLayerPatterns);
             resultLayersBox.Text = JoinLines(settings.ResultLayerPatterns);
             annotationLayersBox.Text = JoinLines(settings.AnnotationLayerPatterns);
-            mleaderIgnoreLayersBox.Text = JoinLines(settings.MLeaderIgnoreLayerPatterns);
+            mleaderDeleteLayersBox.Text = JoinLines(settings.MLeaderDeleteLayerPatterns);
+            mleaderKeepTextLayersBox.Text = JoinLines(settings.MLeaderKeepTextLayerPatterns);
             tinyTextBox.Text = FormatDouble(settings.TinyTextDeleteHeight);
             explodeBeforeBox.Value = ClampDecimal(settings.ExplodePassesBeforeBurst, explodeBeforeBox.Minimum, explodeBeforeBox.Maximum);
             burstCheck.Checked = settings.BurstInserts;
@@ -279,7 +282,9 @@ namespace DraftingSuite
                 ProtectedSourceLayerPatterns = SplitLines(protectedLayersBox.Text),
                 ResultLayerPatterns = SplitLines(resultLayersBox.Text),
                 AnnotationLayerPatterns = SplitLines(annotationLayersBox.Text),
-                MLeaderIgnoreLayerPatterns = SplitLines(mleaderIgnoreLayersBox.Text),
+                MLeaderIgnoreLayerPatterns = SplitLines(mleaderDeleteLayersBox.Text),
+                MLeaderDeleteLayerPatterns = SplitLines(mleaderDeleteLayersBox.Text),
+                MLeaderKeepTextLayerPatterns = SplitLines(mleaderKeepTextLayersBox.Text),
                 TinyTextDeleteHeight = tinyTextHeight,
                 ExplodePassesBeforeBurst = (int)explodeBeforeBox.Value,
                 BurstInserts = burstCheck.Checked,

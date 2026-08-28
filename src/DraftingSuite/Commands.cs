@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.6";
+        private const string Version = "0.1.8";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -63,7 +63,8 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  COGO display objects created: {0}", result.CogoDisplayObjectsCreated);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
-                    ed.WriteMessage("\n  Text/MText ignored by layer: {0}", result.TextIgnoredByLayer);
+                    ed.WriteMessage("\n  Text/MText deleted by layer: {0}", result.TextDeletedByLayer);
+                    ed.WriteMessage("\n  Text/MText kept by layer: {0}", result.TextKeptByLayer);
                     ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders);
                     ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
                     ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
@@ -322,9 +323,14 @@ namespace DraftingSuite
                 TextInfo text = ReadTextInfo(entity);
                 if (text == null)
                     continue;
-                if (MatchesAnyWildcard(text.Layer, settings.MLeaderIgnoreLayerPatterns))
+                if (MatchesAnyWildcard(text.Layer, settings.MLeaderDeleteLayerPatterns))
                 {
-                    result.TextIgnoredByLayer++;
+                    DeleteTextByLayerRule(entity, id, result);
+                    continue;
+                }
+                if (MatchesAnyWildcard(text.Layer, settings.MLeaderKeepTextLayerPatterns))
+                {
+                    result.TextKeptByLayer++;
                     continue;
                 }
 
@@ -342,6 +348,20 @@ namespace DraftingSuite
                 {
                     result.Errors.Add("Text to mleader skipped " + id.Handle + ": " + ex.Message);
                 }
+            }
+        }
+
+        private static void DeleteTextByLayerRule(Entity entity, ObjectId id, FbkPrepResult result)
+        {
+            try
+            {
+                entity.UpgradeOpen();
+                entity.Erase();
+                result.TextDeletedByLayer++;
+            }
+            catch (System.Exception ex)
+            {
+                result.Errors.Add("Layer-ignored text delete skipped " + id.Handle + ": " + ex.Message);
             }
         }
 
@@ -864,7 +884,8 @@ namespace DraftingSuite
             public int CogoDisplayObjectsCreated { get; set; }
             public int AnonymousBlocksBurst { get; set; }
             public int TinyTextDeleted { get; set; }
-            public int TextIgnoredByLayer { get; set; }
+            public int TextDeletedByLayer { get; set; }
+            public int TextKeptByLayer { get; set; }
             public int TextConvertedToMleaders { get; set; }
             public int ObjectsFlattened { get; set; }
             public int CogoPointsRestyled { get; set; }

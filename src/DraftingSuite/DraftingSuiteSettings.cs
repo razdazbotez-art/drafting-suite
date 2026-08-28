@@ -77,6 +77,12 @@ namespace DraftingSuite
         [DataMember(Order = 21)]
         public List<string> MLeaderIgnoreLayerPatterns { get; set; } = new List<string> { "*-PNT" };
 
+        [DataMember(Order = 22)]
+        public List<string> MLeaderDeleteLayerPatterns { get; set; } = new List<string> { "*-PNT" };
+
+        [DataMember(Order = 23)]
+        public List<string> MLeaderKeepTextLayerPatterns { get; set; } = new List<string>();
+
         public static string SettingsPath
         {
             get
@@ -284,7 +290,13 @@ namespace DraftingSuite
             if (settings.AnnotationLayerPatterns == null || settings.AnnotationLayerPatterns.Count == 0)
                 settings.AnnotationLayerPatterns = new List<string> { "*-ANNO*", "*-TEXT*", "*-A", "*0", "*IDEN*" };
             if (settings.MLeaderIgnoreLayerPatterns == null)
-                settings.MLeaderIgnoreLayerPatterns = new List<string> { "*-PNT" };
+                settings.MLeaderIgnoreLayerPatterns = new List<string>();
+            if (settings.MLeaderDeleteLayerPatterns == null || settings.MLeaderDeleteLayerPatterns.Count == 0)
+                settings.MLeaderDeleteLayerPatterns = settings.MLeaderIgnoreLayerPatterns.Count > 0
+                    ? new List<string>(settings.MLeaderIgnoreLayerPatterns)
+                    : new List<string> { "*-PNT" };
+            if (settings.MLeaderKeepTextLayerPatterns == null)
+                settings.MLeaderKeepTextLayerPatterns = new List<string>();
             if (settings.ExplodePassesBeforeBurst < 0)
                 settings.ExplodePassesBeforeBurst = 0;
             if (settings.ExplodePassesAfterBurst < 0)
