@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.41`
+Current version: `0.1.42`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -10,7 +10,7 @@ New installs start with the built-in `Typical` preset.
 
 - `DS` opens the Drafting Suite palette.
 - `DSFBKPREP` prepares an opened fieldbook drawing for drafting.
-- `DSSETTINGS` opens Drafting Suite settings.
+- `DSSETTINGS` opens the modeless Drafting Suite settings window.
 - `DSVERSION` prints the loaded Drafting Suite version.
 
 ## FBK Prep

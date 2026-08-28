@@ -9,6 +9,7 @@ namespace DraftingSuite
 {
     internal sealed class DraftingSuiteSettingsForm : Form
     {
+        private static DraftingSuiteSettingsForm instance;
         private ComboBox presetCombo;
         private TextBox presetFolderBox;
         private Label presetStatus;
@@ -69,10 +70,20 @@ namespace DraftingSuite
 
         public static void ShowSettingsDialog()
         {
-            using (DraftingSuiteSettingsForm form = new DraftingSuiteSettingsForm())
+            if (instance == null || instance.IsDisposed)
             {
-                AcadApplication.ShowModalDialog(form);
+                instance = new DraftingSuiteSettingsForm();
+                instance.FormClosed += (_, __) => instance = null;
+                AcadApplication.ShowModelessDialog(instance);
+                return;
             }
+
+            if (instance.WindowState == FormWindowState.Minimized)
+                instance.WindowState = FormWindowState.Normal;
+
+            instance.LoadSettings(DraftingSuiteSettings.LoadActiveSettings());
+            instance.Show();
+            instance.Activate();
         }
 
         private Control BuildPresetPanel()

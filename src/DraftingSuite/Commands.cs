@@ -25,7 +25,9 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.41";
+        private const string Version = "0.1.42";
+
+        internal static string VersionText => Version;
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
