@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.38";
+        private const string Version = "0.1.39";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -64,6 +64,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Survey networks deleted: {0}", result.SurveyNetworksDeleted);
                     ed.WriteMessage("\n  Block references exploded: {0}", result.BlockReferencesExploded);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
+                    ed.WriteMessage("\n  COGO-layer lines deleted: {0}", result.CogoLayerLinesDeleted);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
                     ed.WriteMessage("\n  Text/MText deleted by layer: {0}", result.TextDeletedByLayer);
@@ -173,7 +174,7 @@ namespace DraftingSuite
                     ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesAfterBurst, "after burst");
 
                 if (settings.ConvertLinesTo3dPolylines)
-                    ConvertLinesTo3dPolylines(tr, candidateIds, result);
+                    ConvertLinesTo3dPolylines(tr, candidateIds, result, settings);
 
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
                 annotationIds.AddRange(candidateIds.Where(id => IsEligibleSourceAnnotation(GetEntityOrNull(tr, id), settings)));
@@ -689,7 +690,7 @@ namespace DraftingSuite
             }
         }
 
-        private static void ConvertLinesTo3dPolylines(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result)
+        private static void ConvertLinesTo3dPolylines(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result, DraftingSuiteSettings settings)
         {
             foreach (ObjectId id in ids.ToList())
             {
@@ -699,6 +700,14 @@ namespace DraftingSuite
 
                 try
                 {
+                    if (MatchesAnyWildcard(line.Layer, settings.ProtectedSourceLayerPatterns))
+                    {
+                        line.UpgradeOpen();
+                        line.Erase();
+                        result.CogoLayerLinesDeleted++;
+                        continue;
+                    }
+
                     BlockTableRecord owner = tr.GetObject(line.OwnerId, OpenMode.ForWrite, false) as BlockTableRecord;
                     if (owner == null)
                         continue;
@@ -1518,6 +1527,7 @@ namespace DraftingSuite
             public int SurveyNetworksDeleted { get; set; }
             public int BlockReferencesExploded { get; set; }
             public int AnonymousBlocksBurst { get; set; }
+            public int CogoLayerLinesDeleted { get; set; }
             public int LinesConvertedTo3dPolylines { get; set; }
             public int TinyTextDeleted { get; set; }
             public int TextDeletedByLayer { get; set; }
