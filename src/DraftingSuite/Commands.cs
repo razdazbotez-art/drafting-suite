@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.20";
+        private const string Version = "0.1.21";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -65,7 +65,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Block references exploded: {0}", result.BlockReferencesExploded);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
                     ed.WriteMessage("\n  Extracted graphics deleted by layer rule: {0}", result.ExtractedGraphicsDeletedByLayer);
-                    ed.WriteMessage("\n  Protected source objects skipped: {0}", result.ProtectedSourceObjectsSkipped);
+                    ed.WriteMessage("\n  COGO point layer objects skipped: {0}", result.ProtectedSourceObjectsSkipped);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
                     ed.WriteMessage("\n  Text/MText deleted by layer: {0}", result.TextDeletedByLayer);

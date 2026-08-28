@@ -182,8 +182,8 @@ namespace DraftingSuite
             AddHelpText(layers, "Elevation value used when flattening annotation, usually 0.");
             flattenSkipBlocksBox = AddMultiline(layers, "Do not flatten blocks");
             AddHelpText(layers, "Wildcard block-name list skipped by flattening, such as BL_PT_*.");
-            protectedLayersBox = AddMultiline(layers, "Protected source layers");
-            AddHelpText(layers, "Wildcard source-layer list for original drawing objects that FBK Prep should not flatten, convert to mleaders, or convert from lines to 3D polylines.");
+            protectedLayersBox = AddMultiline(layers, "COGO point layers");
+            AddHelpText(layers, "Wildcard layer list for original COGO point graphics and point-related source objects that FBK Prep should not flatten, convert to mleaders, or convert from lines to 3D polylines.");
             resultLayersBox = AddMultiline(layers, "Result layers to keep");
             AddHelpText(layers, "Wildcard layer list for extracted COGO graphics that should remain after explode and burst cleanup. Extracted graphics outside this list and the annotation list are deleted.");
             annotationLayersBox = AddMultiline(layers, "Annotation layers to keep");
