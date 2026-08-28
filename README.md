@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.4`
+Current version: `0.1.5`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -17,9 +17,10 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 
 1. Extract visible COGO point display graphics into ordinary CAD entities.
 2. Burst nested anonymous block references until no anonymous blocks remain, up to the configured pass limit.
-3. Convert text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
-4. Flatten drafting annotation to elevation `0`.
-5. Set Civil 3D COGO point style and label style to `Standard` when those style properties are available.
+3. Delete text and mtext at or below the configured tiny text height.
+4. Convert remaining text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
+5. Flatten drafting annotation to elevation `0`.
+6. Set Civil 3D COGO point style and label style to `Standard` when those styles are available.
 
 The command asks whether to process the entire drawing or the current selection. The first version is intentionally conservative: it does not erase the drawing, does not detach references, and does not run the legacy `XCOGO` copy/undo/paste sequence.
 

@@ -24,7 +24,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.4";
+        private const string Version = "0.1.5";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -61,6 +61,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  COGO points found: {0}", result.CogoPointsFound);
                     ed.WriteMessage("\n  COGO display objects created: {0}", result.CogoDisplayObjectsCreated);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
+                    ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
                     ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders);
                     ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
                     ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
@@ -154,6 +155,8 @@ namespace DraftingSuite
 
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
                 annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotation(GetEntityOrNull(tr, id))));
+
+                DeleteTinyText(tr, annotationIds, result, settings.TinyTextDeleteHeight);
 
                 if (settings.ConvertTextToMleaders)
                     ConvertTextToMleaders(db, tr, annotationIds, result, settings);
@@ -313,8 +316,8 @@ namespace DraftingSuite
 
             foreach (ObjectId id in uniqueIds.ToList())
             {
-                    Entity entity = GetEntityOrNull(tr, id);
-                    TextInfo text = ReadTextInfo(entity);
+                Entity entity = GetEntityOrNull(tr, id);
+                TextInfo text = ReadTextInfo(entity);
                 if (text == null)
                     continue;
 
@@ -331,6 +334,31 @@ namespace DraftingSuite
                 catch (System.Exception ex)
                 {
                     result.Errors.Add("Text to mleader skipped " + id.Handle + ": " + ex.Message);
+                }
+            }
+        }
+
+        private static void DeleteTinyText(Transaction tr, IEnumerable<ObjectId> annotationIds, FbkPrepResult result, double maxHeight)
+        {
+            if (maxHeight <= 0.0)
+                return;
+
+            foreach (ObjectId id in new HashSet<ObjectId>(annotationIds))
+            {
+                Entity entity = GetEntityOrNull(tr, id);
+                TextInfo text = ReadTextInfo(entity);
+                if (text == null || text.Height > maxHeight)
+                    continue;
+
+                try
+                {
+                    entity.UpgradeOpen();
+                    entity.Erase();
+                    result.TinyTextDeleted++;
+                }
+                catch (System.Exception ex)
+                {
+                    result.Errors.Add("Tiny text delete skipped " + id.Handle + ": " + ex.Message);
                 }
             }
         }
@@ -453,6 +481,9 @@ namespace DraftingSuite
 
         private static void RestyleCogoPoints(Transaction tr, IEnumerable<ObjectId> cogoIds, FbkPrepResult result, DraftingSuiteSettings settings)
         {
+            ObjectId pointStyleId = FindCivilStyleId(tr, settings.CogoPointStyleName, "PointStyle");
+            ObjectId labelStyleId = FindCivilStyleId(tr, settings.CogoLabelStyleName, "LabelStyle");
+
             foreach (ObjectId id in cogoIds)
             {
                 Entity entity = GetEntityOrNull(tr, id);
@@ -462,9 +493,11 @@ namespace DraftingSuite
                 try
                 {
                     entity.UpgradeOpen();
-                    bool pointStyleSet = TrySetStringProperty(entity, "StyleName", settings.CogoPointStyleName) ||
+                    bool pointStyleSet = TrySetObjectIdProperty(entity, pointStyleId, "StyleId", "PointStyleId") ||
+                                         TrySetStringProperty(entity, "StyleName", settings.CogoPointStyleName) ||
                                          TrySetStringProperty(entity, "PointStyleName", settings.CogoPointStyleName);
-                    bool labelStyleSet = TrySetStringProperty(entity, "LabelStyleName", settings.CogoLabelStyleName) ||
+                    bool labelStyleSet = TrySetObjectIdProperty(entity, labelStyleId, "LabelStyleId", "PointLabelStyleId") ||
+                                         TrySetStringProperty(entity, "LabelStyleName", settings.CogoLabelStyleName) ||
                                          TrySetStringProperty(entity, "PointLabelStyleName", settings.CogoLabelStyleName);
                     if (pointStyleSet || labelStyleSet)
                         result.CogoPointsRestyled++;
@@ -476,6 +509,178 @@ namespace DraftingSuite
                     result.CogoPointStyleSkipped++;
                     result.Errors.Add("COGO style skipped " + id.Handle + ": " + ex.Message);
                 }
+            }
+        }
+
+        private static ObjectId FindCivilStyleId(Transaction tr, string styleName, string styleKind)
+        {
+            if (string.IsNullOrWhiteSpace(styleName))
+                return ObjectId.Null;
+
+            object civilDocument = GetActiveCivilDocument();
+            if (civilDocument == null)
+                return ObjectId.Null;
+
+            object stylesRoot = GetPropertyValue(civilDocument, "Styles");
+            if (stylesRoot == null)
+                return ObjectId.Null;
+
+            HashSet<object> visited = new HashSet<object>();
+            return FindStyleIdRecursive(tr, stylesRoot, styleName.Trim(), styleKind, visited, 0);
+        }
+
+        private static object GetActiveCivilDocument()
+        {
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type type = assembly.GetType("Autodesk.Civil.ApplicationServices.CivilApplication", false);
+                if (type == null)
+                    continue;
+
+                PropertyInfo property = type.GetProperty("ActiveDocument", BindingFlags.Public | BindingFlags.Static);
+                if (property != null)
+                    return property.GetValue(null, null);
+            }
+
+            return null;
+        }
+
+        private static ObjectId FindStyleIdRecursive(Transaction tr, object value, string styleName, string styleKind, HashSet<object> visited, int depth)
+        {
+            if (value == null || depth > 8 || visited.Contains(value))
+                return ObjectId.Null;
+
+            visited.Add(value);
+
+            if (value is ObjectId id)
+            {
+                if (TryStyleMatches(tr, id, styleName, styleKind))
+                    return id;
+
+                return ObjectId.Null;
+            }
+
+            ObjectId namedMatch = FindStyleIdByNameIndexer(tr, value, styleName, styleKind);
+            if (!namedMatch.IsNull)
+                return namedMatch;
+
+            ObjectId enumerableMatch = FindStyleIdInEnumerable(tr, value, styleName, styleKind);
+            if (!enumerableMatch.IsNull)
+                return enumerableMatch;
+
+            foreach (PropertyInfo property in value.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (property.GetIndexParameters().Length != 0)
+                    continue;
+
+                string propertyName = property.Name ?? string.Empty;
+                bool likelyStylePath = propertyName.IndexOf("Style", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                       propertyName.IndexOf("Label", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                       propertyName.IndexOf("Point", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!likelyStylePath)
+                    continue;
+
+                object child;
+                try
+                {
+                    child = property.GetValue(value, null);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                ObjectId match = FindStyleIdRecursive(tr, child, styleName, styleKind, visited, depth + 1);
+                if (!match.IsNull)
+                    return match;
+            }
+
+            return ObjectId.Null;
+        }
+
+        private static ObjectId FindStyleIdByNameIndexer(Transaction tr, object value, string styleName, string styleKind)
+        {
+            Type type = value.GetType();
+            foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                ParameterInfo[] indexParameters = property.GetIndexParameters();
+                if (indexParameters.Length != 1 || indexParameters[0].ParameterType != typeof(string))
+                    continue;
+
+                try
+                {
+                    object item = property.GetValue(value, new object[] { styleName });
+                    if (item is ObjectId id && TryStyleMatches(tr, id, styleName, styleKind))
+                        return id;
+                }
+                catch
+                {
+                }
+            }
+
+            return ObjectId.Null;
+        }
+
+        private static ObjectId FindStyleIdInEnumerable(Transaction tr, object value, string styleName, string styleKind)
+        {
+            System.Collections.IEnumerable enumerable = value as System.Collections.IEnumerable;
+            if (enumerable == null || value is string)
+                return ObjectId.Null;
+
+            try
+            {
+                foreach (object item in enumerable)
+                {
+                    if (item is ObjectId id && TryStyleMatches(tr, id, styleName, styleKind))
+                        return id;
+                }
+            }
+            catch
+            {
+            }
+
+            return ObjectId.Null;
+        }
+
+        private static bool TryStyleMatches(Transaction tr, ObjectId id, string styleName, string styleKind)
+        {
+            if (id.IsNull || id.IsErased)
+                return false;
+
+            try
+            {
+                DBObject obj = tr.GetObject(id, OpenMode.ForRead, false);
+                if (obj == null)
+                    return false;
+
+                string typeName = obj.GetType().FullName ?? obj.GetType().Name;
+                if (styleKind == "PointStyle" && typeName.IndexOf("PointStyle", StringComparison.OrdinalIgnoreCase) < 0)
+                    return false;
+                if (styleKind == "LabelStyle" && typeName.IndexOf("LabelStyle", StringComparison.OrdinalIgnoreCase) < 0)
+                    return false;
+
+                object name = GetPropertyValue(obj, "Name");
+                return string.Equals(Convert.ToString(name), styleName, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static object GetPropertyValue(object target, string propertyName)
+        {
+            if (target == null)
+                return null;
+
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                return property == null ? null : property.GetValue(target, null);
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -574,6 +779,30 @@ namespace DraftingSuite
             return true;
         }
 
+        private static bool TrySetObjectIdProperty(object target, ObjectId value, params string[] propertyNames)
+        {
+            if (target == null || value.IsNull)
+                return false;
+
+            foreach (string propertyName in propertyNames)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null || !property.CanWrite || property.PropertyType != typeof(ObjectId))
+                        continue;
+
+                    property.SetValue(target, value, null);
+                    return true;
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
+        }
+
         private static Point3d ToTargetZ(Point3d point, double targetElevation)
         {
             return new Point3d(point.X, point.Y, targetElevation);
@@ -609,6 +838,7 @@ namespace DraftingSuite
             public int CogoPointsFound { get; set; }
             public int CogoDisplayObjectsCreated { get; set; }
             public int AnonymousBlocksBurst { get; set; }
+            public int TinyTextDeleted { get; set; }
             public int TextConvertedToMleaders { get; set; }
             public int ObjectsFlattened { get; set; }
             public int CogoPointsRestyled { get; set; }
