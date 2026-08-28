@@ -80,7 +80,7 @@ namespace DraftingSuite
             Controls.Add(layout);
         }
 
-        public static void Show()
+        public static void ShowPalette()
         {
             if (instance == null || instance.IsDisposed)
             {

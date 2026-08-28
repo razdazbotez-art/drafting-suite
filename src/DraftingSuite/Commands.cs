@@ -29,7 +29,7 @@ namespace DraftingSuite
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
         {
-            DraftingSuitePalette.Show();
+            DraftingSuitePalette.ShowPalette();
         }
 
         [CommandMethod("DSFBKPREP", CommandFlags.Modal)]
