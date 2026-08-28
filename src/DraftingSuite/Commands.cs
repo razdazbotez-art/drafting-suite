@@ -24,9 +24,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.1";
-        private const string StandardStyleName = "Standard";
-        private const double DefaultMLeaderTextOffset = 15.0;
+        private const string Version = "0.1.2";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -52,9 +50,10 @@ namespace DraftingSuite
                     return;
                 }
 
+                DraftingSuiteSettings settings = DraftingSuiteSettings.Load();
                 using (doc.LockDocument())
                 {
-                    FbkPrepResult result = RunFbkPrep(doc.Database, ed, scope);
+                    FbkPrepResult result = RunFbkPrep(doc.Database, ed, scope, settings);
                     ed.WriteMessage("\nFBK Prep complete.");
                     ed.WriteMessage("\n  Scope: {0}", scope == FbkPrepScope.Selection ? "selection" : "entire drawing");
                     ed.WriteMessage("\n  COGO points found: {0}", result.CogoPointsFound);
@@ -89,12 +88,18 @@ namespace DraftingSuite
             PrintLoadMessage(Application.DocumentManager.MdiActiveDocument?.Editor);
         }
 
+        [CommandMethod("DSSETTINGS", CommandFlags.Session)]
+        public void OpenSettings()
+        {
+            DraftingSuiteSettingsForm.ShowSettingsDialog();
+        }
+
         internal static void PrintLoadMessage(Editor ed)
         {
             if (ed == null)
                 return;
 
-            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, DSFBKPREP, DSVERSION.", Version);
+            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, DSFBKPREP, DSSETTINGS, DSVERSION.", Version);
             ed.WriteMessage("\n");
         }
 
@@ -115,7 +120,7 @@ namespace DraftingSuite
             return FbkPrepScope.EntireDrawing;
         }
 
-        private static FbkPrepResult RunFbkPrep(Database db, Editor ed, FbkPrepScope scope)
+        private static FbkPrepResult RunFbkPrep(Database db, Editor ed, FbkPrepScope scope, DraftingSuiteSettings settings)
         {
             FbkPrepResult result = new FbkPrepResult();
             List<ObjectId> selectedIds = scope == FbkPrepScope.Selection ? PromptSelection(ed) : new List<ObjectId>();
@@ -137,17 +142,24 @@ namespace DraftingSuite
                     result.CogoPointsFound++;
                 }
 
-                List<ObjectId> createdIds = ExplodeCogoDisplayGraphics(db, tr, cogoIds, result);
+                List<ObjectId> createdIds = settings.ExtractCogoDisplayGraphics
+                    ? ExplodeCogoDisplayGraphics(db, tr, cogoIds, result)
+                    : new List<ObjectId>();
 
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
                 annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotation(tr.GetObject(id, OpenMode.ForRead, false) as Entity)));
 
-                ConvertTextToMleaders(db, tr, annotationIds, result);
+                if (settings.ConvertTextToMleaders)
+                    ConvertTextToMleaders(db, tr, annotationIds, result, settings);
 
-                List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr);
-                FlattenObjects(tr, flattenIds, result);
+                if (settings.FlattenAnnotation)
+                {
+                    List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr);
+                    FlattenObjects(tr, flattenIds, result, settings.FlattenElevation);
+                }
 
-                RestyleCogoPoints(tr, cogoIds, result);
+                if (settings.RestyleCogoPoints)
+                    RestyleCogoPoints(tr, cogoIds, result, settings);
 
                 tr.Commit();
             }
@@ -223,7 +235,7 @@ namespace DraftingSuite
             return createdIds;
         }
 
-        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result)
+        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings)
         {
             BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
             BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -239,7 +251,7 @@ namespace DraftingSuite
                 try
                 {
                     entity.UpgradeOpen();
-                    MLeader leader = CreateMLeader(db, text);
+                    MLeader leader = CreateMLeader(db, text, settings);
                     ObjectId leaderId = modelSpace.AppendEntity(leader);
                     tr.AddNewlyCreatedDBObject(leader, true);
                     entity.Erase();
@@ -253,10 +265,10 @@ namespace DraftingSuite
             }
         }
 
-        private static MLeader CreateMLeader(Database db, TextInfo text)
+        private static MLeader CreateMLeader(Database db, TextInfo text, DraftingSuiteSettings settings)
         {
-            Point3d arrowPoint = ToZeroZ(text.Position);
-            Point3d textPoint = new Point3d(arrowPoint.X + DefaultMLeaderTextOffset, arrowPoint.Y + DefaultMLeaderTextOffset, 0.0);
+            Point3d arrowPoint = ToTargetZ(text.Position, settings.FlattenElevation);
+            Point3d textPoint = new Point3d(arrowPoint.X + settings.MLeaderTextOffsetX, arrowPoint.Y + settings.MLeaderTextOffsetY, settings.FlattenElevation);
             MText mText = new MText
             {
                 Contents = text.Contents,
@@ -291,7 +303,7 @@ namespace DraftingSuite
             return ids.ToList();
         }
 
-        private static void FlattenObjects(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result)
+        private static void FlattenObjects(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result, double targetElevation)
         {
             foreach (ObjectId id in ids)
             {
@@ -301,7 +313,7 @@ namespace DraftingSuite
 
                 try
                 {
-                    if (FlattenEntity(entity))
+                    if (FlattenEntity(entity, targetElevation))
                         result.ObjectsFlattened++;
                 }
                 catch (System.Exception ex)
@@ -311,7 +323,7 @@ namespace DraftingSuite
             }
         }
 
-        private static bool FlattenEntity(Entity entity)
+        private static bool FlattenEntity(Entity entity, double targetElevation)
         {
             if (!IsDraftingAnnotation(entity))
                 return false;
@@ -319,56 +331,57 @@ namespace DraftingSuite
             entity.UpgradeOpen();
             if (entity is BlockReference block)
             {
-                block.Position = ToZeroZ(block.Position);
+                block.Position = ToTargetZ(block.Position, targetElevation);
                 return true;
             }
             if (entity is DBText dbText)
             {
-                dbText.Position = ToZeroZ(dbText.Position);
+                dbText.Position = ToTargetZ(dbText.Position, targetElevation);
                 if (!dbText.AlignmentPoint.IsEqualTo(Point3d.Origin))
-                    dbText.AlignmentPoint = ToZeroZ(dbText.AlignmentPoint);
+                    dbText.AlignmentPoint = ToTargetZ(dbText.AlignmentPoint, targetElevation);
                 return true;
             }
             if (entity is MText mText)
             {
-                mText.Location = ToZeroZ(mText.Location);
+                mText.Location = ToTargetZ(mText.Location, targetElevation);
                 return true;
             }
             if (entity is MLeader mLeader)
             {
-                FlattenByExtents(mLeader);
+                FlattenByExtents(mLeader, targetElevation);
                 return true;
             }
             if (entity is Leader leader)
             {
-                FlattenByExtents(leader);
+                FlattenByExtents(leader, targetElevation);
                 return true;
             }
             if (entity is Dimension dimension)
             {
-                FlattenByExtents(dimension);
+                FlattenByExtents(dimension, targetElevation);
                 return true;
             }
 
-            FlattenByExtents(entity);
+            FlattenByExtents(entity, targetElevation);
             return true;
         }
 
-        private static void FlattenByExtents(Entity entity)
+        private static void FlattenByExtents(Entity entity, double targetElevation)
         {
             try
             {
                 Extents3d extents = entity.GeometricExtents;
                 double z = Math.Abs(extents.MinPoint.Z) <= Math.Abs(extents.MaxPoint.Z) ? extents.MinPoint.Z : extents.MaxPoint.Z;
-                if (Math.Abs(z) > 1e-8)
-                    entity.TransformBy(Matrix3d.Displacement(new Vector3d(0.0, 0.0, -z)));
+                double delta = targetElevation - z;
+                if (Math.Abs(delta) > 1e-8)
+                    entity.TransformBy(Matrix3d.Displacement(new Vector3d(0.0, 0.0, delta)));
             }
             catch
             {
             }
         }
 
-        private static void RestyleCogoPoints(Transaction tr, IEnumerable<ObjectId> cogoIds, FbkPrepResult result)
+        private static void RestyleCogoPoints(Transaction tr, IEnumerable<ObjectId> cogoIds, FbkPrepResult result, DraftingSuiteSettings settings)
         {
             foreach (ObjectId id in cogoIds)
             {
@@ -379,10 +392,10 @@ namespace DraftingSuite
                 try
                 {
                     entity.UpgradeOpen();
-                    bool pointStyleSet = TrySetStringProperty(entity, "StyleName", StandardStyleName) ||
-                                         TrySetStringProperty(entity, "PointStyleName", StandardStyleName);
-                    bool labelStyleSet = TrySetStringProperty(entity, "LabelStyleName", StandardStyleName) ||
-                                         TrySetStringProperty(entity, "PointLabelStyleName", StandardStyleName);
+                    bool pointStyleSet = TrySetStringProperty(entity, "StyleName", settings.CogoPointStyleName) ||
+                                         TrySetStringProperty(entity, "PointStyleName", settings.CogoPointStyleName);
+                    bool labelStyleSet = TrySetStringProperty(entity, "LabelStyleName", settings.CogoLabelStyleName) ||
+                                         TrySetStringProperty(entity, "PointLabelStyleName", settings.CogoLabelStyleName);
                     if (pointStyleSet || labelStyleSet)
                         result.CogoPointsRestyled++;
                     else
@@ -452,9 +465,9 @@ namespace DraftingSuite
             return true;
         }
 
-        private static Point3d ToZeroZ(Point3d point)
+        private static Point3d ToTargetZ(Point3d point, double targetElevation)
         {
-            return new Point3d(point.X, point.Y, 0.0);
+            return new Point3d(point.X, point.Y, targetElevation);
         }
 
         private enum FbkPrepScope

@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.1`
+Current version: `0.1.2`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -8,6 +8,7 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 
 - `DS` opens the Drafting Suite palette.
 - `DSFBKPREP` prepares an opened fieldbook drawing for drafting.
+- `DSSETTINGS` opens Drafting Suite settings.
 - `DSVERSION` prints the loaded Drafting Suite version.
 
 ## FBK Prep
@@ -20,3 +21,5 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 4. Set Civil 3D COGO point style and label style to `Standard` when those style properties are available.
 
 The command asks whether to process the entire drawing or the current selection. The first version is intentionally conservative: it does not erase the drawing, does not detach references, and does not run the legacy `XCOGO` copy/undo/paste sequence.
+
+Settings are stored in `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSuite\settings.json`. The settings dialog controls the current FBK Prep toggles, mleader offset, flatten elevation, COGO style names, and the XCOGO-style layer/pipeline defaults that will drive the closer extraction pass.

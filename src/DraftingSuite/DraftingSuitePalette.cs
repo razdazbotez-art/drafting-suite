@@ -23,9 +23,10 @@ namespace DraftingSuite
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 4,
+                RowCount = 5,
                 Padding = new Padding(12)
             };
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -48,9 +49,18 @@ namespace DraftingSuite
             };
             runButton.Click += (_, __) => RunCommand("DSFBKPREP");
 
+            Button settingsButton = new Button
+            {
+                Text = "Settings",
+                Height = 30,
+                Dock = DockStyle.Top,
+                Margin = new Padding(0, 0, 0, 10)
+            };
+            settingsButton.Click += (_, __) => DraftingSuiteSettingsForm.ShowSettingsDialog();
+
             Label details = new Label
             {
-                Text = "Extract COGO display graphics, convert nearby text to mleaders, flatten annotation, and set COGO styles to Standard.",
+                Text = "Extract COGO display graphics, convert text to mleaders, flatten annotation, and set COGO styles.",
                 Dock = DockStyle.Fill,
                 AutoSize = false
             };
@@ -64,8 +74,9 @@ namespace DraftingSuite
 
             layout.Controls.Add(title, 0, 0);
             layout.Controls.Add(runButton, 0, 1);
-            layout.Controls.Add(details, 0, 2);
-            layout.Controls.Add(command, 0, 3);
+            layout.Controls.Add(settingsButton, 0, 2);
+            layout.Controls.Add(details, 0, 3);
+            layout.Controls.Add(command, 0, 4);
             Controls.Add(layout);
         }
 
