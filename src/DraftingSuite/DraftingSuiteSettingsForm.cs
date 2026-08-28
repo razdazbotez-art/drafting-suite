@@ -58,9 +58,10 @@ namespace DraftingSuite
             Controls.Add(root);
 
             DraftingSuiteSettings active = DraftingSuiteSettings.LoadActiveSettings();
+            DraftingSuiteSettings effective = DraftingSuiteSettings.Load();
             defaultPresetName = active.DefaultPresetName;
-            LoadSettings(active);
-            RefreshPresetList(string.IsNullOrWhiteSpace(active.PresetName) ? active.DefaultPresetName : active.PresetName);
+            LoadSettings(effective);
+            RefreshPresetList(string.IsNullOrWhiteSpace(effective.PresetName) ? active.DefaultPresetName : effective.PresetName);
         }
 
         public static void ShowSettingsDialog()
@@ -101,16 +102,19 @@ namespace DraftingSuite
                 WrapContents = true
             };
             Button loadPreset = new Button { Text = "Load", Width = 72 };
+            Button saveActive = new Button { Text = "Save", Width = 72 };
             Button savePreset = new Button { Text = "Save As", Width = 78 };
             Button renamePreset = new Button { Text = "Rename", Width = 78 };
             Button deletePreset = new Button { Text = "Delete", Width = 72 };
             Button setDefault = new Button { Text = "Set Default", Width = 92 };
             loadPreset.Click += (_, __) => LoadSelectedPreset();
+            saveActive.Click += (_, __) => SaveCurrentSettings(true);
             savePreset.Click += (_, __) => SaveAsPreset();
             renamePreset.Click += (_, __) => RenameSelectedPreset();
             deletePreset.Click += (_, __) => DeleteSelectedPreset();
             setDefault.Click += (_, __) => SetDefaultPreset();
             presetButtons.Controls.Add(loadPreset);
+            presetButtons.Controls.Add(saveActive);
             presetButtons.Controls.Add(savePreset);
             presetButtons.Controls.Add(renamePreset);
             presetButtons.Controls.Add(deletePreset);
@@ -302,20 +306,29 @@ namespace DraftingSuite
 
         private void SaveAndClose()
         {
+            if (SaveCurrentSettings(true))
+                Close();
+        }
+
+        private bool SaveCurrentSettings(bool showErrors)
+        {
             DraftingSuiteSettings settings = ReadSettingsFromForm();
             if (settings == null)
-                return;
+                return false;
 
             try
             {
                 settings.Save();
                 if (!string.IsNullOrWhiteSpace(settings.PresetName))
                     settings.SavePreset(settings.PresetName);
-                Close();
+                UpdatePresetStatus();
+                return true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.Message, "Settings could not be saved", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (showErrors)
+                    MessageBox.Show(this, ex.Message, "Settings could not be saved", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
             }
         }
 
@@ -349,6 +362,7 @@ namespace DraftingSuite
             {
                 settings.PresetName = presetName.Trim();
                 settings.SavePreset(settings.PresetName);
+                settings.Save();
                 RefreshPresetList(settings.PresetName);
                 UpdatePresetStatus();
             }

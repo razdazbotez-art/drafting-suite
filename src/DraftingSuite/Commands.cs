@@ -8,6 +8,8 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using CivilApplication = Autodesk.Civil.ApplicationServices.CivilApplication;
+using CogoPoint = Autodesk.Civil.DatabaseServices.CogoPoint;
 
 namespace DraftingSuite
 {
@@ -25,7 +27,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.10";
+        private const string Version = "0.1.11";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -143,8 +145,8 @@ namespace DraftingSuite
                 AddCivilDocumentCogoPointIds(cogoIds);
                 foreach (ObjectId id in candidateIds)
                 {
-                    Entity entity = GetEntityOrNull(tr, id);
-                    if (!IsCogoPoint(entity))
+                    DBObject obj = GetDBObjectOrNull(tr, id);
+                    if (!IsCogoPoint(obj))
                         continue;
 
                     if (!cogoIds.Contains(id))
@@ -632,19 +634,40 @@ namespace DraftingSuite
 
             foreach (ObjectId id in ids)
             {
-                Entity entity = GetEntityOrNull(tr, id);
-                if (!IsCogoPoint(entity))
+                DBObject obj = GetDBObjectOrNull(tr, id);
+                if (!IsCogoPoint(obj))
                     continue;
 
                 try
                 {
-                    entity.UpgradeOpen();
-                    bool pointStyleSet = TrySetObjectIdProperty(entity, pointStyleId, "StyleId", "PointStyleId") ||
-                                         TrySetStringProperty(entity, "StyleName", settings.CogoPointStyleName) ||
-                                         TrySetStringProperty(entity, "PointStyleName", settings.CogoPointStyleName);
-                    bool labelStyleSet = TrySetObjectIdProperty(entity, labelStyleId, "LabelStyleId", "PointLabelStyleId") ||
-                                         TrySetStringProperty(entity, "LabelStyleName", settings.CogoLabelStyleName) ||
-                                         TrySetStringProperty(entity, "PointLabelStyleName", settings.CogoLabelStyleName);
+                    CogoPoint cogoPoint = tr.GetObject(id, OpenMode.ForWrite, false) as CogoPoint;
+                    bool pointStyleSet = false;
+                    bool labelStyleSet = false;
+                    if (cogoPoint != null)
+                    {
+                        if (!pointStyleId.IsNull)
+                        {
+                            cogoPoint.StyleId = pointStyleId;
+                            pointStyleSet = true;
+                        }
+
+                        if (!labelStyleId.IsNull)
+                        {
+                            cogoPoint.LabelStyleId = labelStyleId;
+                            labelStyleSet = true;
+                        }
+                    }
+                    else
+                    {
+                        obj.UpgradeOpen();
+                        pointStyleSet = TrySetObjectIdProperty(obj, pointStyleId, "StyleId", "PointStyleId") ||
+                                        TrySetStringProperty(obj, "StyleName", settings.CogoPointStyleName) ||
+                                        TrySetStringProperty(obj, "PointStyleName", settings.CogoPointStyleName);
+                        labelStyleSet = TrySetObjectIdProperty(obj, labelStyleId, "LabelStyleId", "PointLabelStyleId") ||
+                                        TrySetStringProperty(obj, "LabelStyleName", settings.CogoLabelStyleName) ||
+                                        TrySetStringProperty(obj, "PointLabelStyleName", settings.CogoLabelStyleName);
+                    }
+
                     if (pointStyleSet || labelStyleSet)
                         result.CogoPointsRestyled++;
                     else
@@ -673,7 +696,9 @@ namespace DraftingSuite
 
             ObjectId exactPathMatch = styleKind == "PointStyle"
                 ? FindStyleIdByPath(tr, civilDocument, styleName.Trim(), styleKind, "Styles", "PointStyles")
-                : FindStyleIdByPath(tr, civilDocument, styleName.Trim(), styleKind, "Styles", "LabelStyles", "PointLabelStyles", "LabelStyles");
+                : FirstNonNullObjectId(
+                    FindStyleIdByPath(tr, civilDocument, styleName.Trim(), styleKind, "Styles", "LabelStyles", "PointLabelStyles", "LabelStyles"),
+                    FindStyleIdByPath(tr, civilDocument, styleName.Trim(), styleKind, "Styles", "LabelStyles", "PointLabelStyles"));
             if (!exactPathMatch.IsNull)
                 return exactPathMatch;
 
@@ -683,6 +708,14 @@ namespace DraftingSuite
 
         private static object GetActiveCivilDocument()
         {
+            try
+            {
+                return CivilApplication.ActiveDocument;
+            }
+            catch
+            {
+            }
+
             foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 Type type = assembly.GetType("Autodesk.Civil.ApplicationServices.CivilApplication", false);
@@ -695,6 +728,17 @@ namespace DraftingSuite
             }
 
             return null;
+        }
+
+        private static ObjectId FirstNonNullObjectId(params ObjectId[] ids)
+        {
+            foreach (ObjectId id in ids)
+            {
+                if (!id.IsNull)
+                    return id;
+            }
+
+            return ObjectId.Null;
         }
 
         private static ObjectId FindStyleIdByPath(Transaction tr, object root, string styleName, string styleKind, params string[] propertyPath)
@@ -981,7 +1025,22 @@ namespace DraftingSuite
             }
         }
 
-        private static bool IsCogoPoint(Entity entity)
+        private static DBObject GetDBObjectOrNull(Transaction tr, ObjectId id)
+        {
+            try
+            {
+                if (id.IsNull || id.IsErased)
+                    return null;
+
+                return tr.GetObject(id, OpenMode.ForRead, false);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool IsCogoPoint(DBObject entity)
         {
             if (entity == null)
                 return false;

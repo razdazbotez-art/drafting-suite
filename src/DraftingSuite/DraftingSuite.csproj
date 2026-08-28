@@ -39,6 +39,14 @@
       <HintPath>$(AutoCADDLL)\AcWindows.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="AeccDbMgd">
+      <HintPath>$(AutoCADDLL)\AeccDbMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AeccBaseMgd">
+      <HintPath>$(AutoCADDLL)\AeccBaseMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
