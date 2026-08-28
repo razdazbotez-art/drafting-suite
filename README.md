@@ -18,8 +18,8 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 1. Extract visible COGO point display graphics into ordinary CAD entities.
 2. Burst nested anonymous block references until no anonymous blocks remain, up to the configured pass limit.
 3. Delete text and mtext at or below the configured tiny text height.
-4. Delete text and mtext when its layer matches a configured MLeader delete layer wildcard.
-5. Leave text and mtext as-is when its layer matches a configured MLeader keep-as-text layer wildcard.
+4. Delete text and mtext when its layer matches a configured delete text layer wildcard.
+5. Leave text and mtext as-is when its layer matches a configured keep-as-text layer wildcard.
 6. Convert remaining text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
 7. Flatten drafting annotation to elevation `0`.
 8. Set Civil 3D COGO point style and label style to `Standard` when those styles are available.

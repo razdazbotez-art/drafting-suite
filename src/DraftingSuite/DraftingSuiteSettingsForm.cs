@@ -153,8 +153,8 @@ namespace DraftingSuite
             protectedLayersBox = AddMultiline(fields, "Protected source layers");
             resultLayersBox = AddMultiline(fields, "Result layers to keep");
             annotationLayersBox = AddMultiline(fields, "Annotation layers to keep");
-            mleaderDeleteLayersBox = AddMultiline(fields, "MLeader delete layers");
-            mleaderKeepTextLayersBox = AddMultiline(fields, "MLeader keep as text layers");
+            mleaderDeleteLayersBox = AddMultiline(fields, "Delete text layers");
+            mleaderKeepTextLayersBox = AddMultiline(fields, "Keep as text layers");
             tinyTextBox = AddText(fields, "Tiny text max height");
             explodeBeforeBox = AddNumber(fields, "Explode passes before burst");
             burstCheck = AddCheck(fields, "Burst anonymous blocks");
