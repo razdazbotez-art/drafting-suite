@@ -168,6 +168,7 @@ namespace DraftingSuite
             TableLayoutPanel text = CreateFieldsTable();
             convertTextCheck = AddCheck(text, "Convert text to mleaders");
             tinyTextBox = AddText(text, "Tiny text max height");
+            AddHelpText(text, "Deletes DBText or MText whose text height is this value or smaller before mleader conversion.");
             mleaderDeleteLayersBox = AddMultiline(text, "Delete text layers");
             mleaderKeepTextLayersBox = AddMultiline(text, "Keep as text layers");
             offsetXBox = AddText(text, "MLeader offset X");
@@ -182,11 +183,11 @@ namespace DraftingSuite
             flattenSkipBlocksBox = AddMultiline(layers, "Do not flatten blocks");
             AddHelpText(layers, "Wildcard block-name list skipped by flattening, such as BL_PT_*.");
             protectedLayersBox = AddMultiline(layers, "Protected source layers");
-            AddHelpText(layers, "Saved in presets for extraction rules. FBK Prep does not apply this list yet.");
+            AddHelpText(layers, "Wildcard source-layer list meant to protect original point-related source objects during COGO graphic extraction. FBK Prep stores it in presets, but does not enforce it yet.");
             resultLayersBox = AddMultiline(layers, "Result layers to keep");
-            AddHelpText(layers, "Saved in presets for extraction rules. FBK Prep does not apply this list yet.");
+            AddHelpText(layers, "Wildcard layer list meant to identify extracted graphics that should remain after the COGO display graphics are exploded and cleaned. FBK Prep stores it in presets, but does not enforce it yet.");
             annotationLayersBox = AddMultiline(layers, "Annotation layers to keep");
-            AddHelpText(layers, "Saved in presets for annotation filtering. FBK Prep currently uses object type, not this list.");
+            AddHelpText(layers, "Wildcard layer list meant to identify text, mtext, mleaders, leaders, dimensions, and blocks as drafting annotation for conversion or flattening. FBK Prep currently uses object type instead of this list.");
             tabs.TabPages.Add(CreateTabPage("Layers && Flatten", layers));
 
             TableLayoutPanel cogo = CreateFieldsTable();
