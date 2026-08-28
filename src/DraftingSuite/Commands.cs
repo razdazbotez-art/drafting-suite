@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.19";
+        private const string Version = "0.1.20";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -64,6 +64,8 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Survey networks deleted: {0}", result.SurveyNetworksDeleted);
                     ed.WriteMessage("\n  Block references exploded: {0}", result.BlockReferencesExploded);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
+                    ed.WriteMessage("\n  Extracted graphics deleted by layer rule: {0}", result.ExtractedGraphicsDeletedByLayer);
+                    ed.WriteMessage("\n  Protected source objects skipped: {0}", result.ProtectedSourceObjectsSkipped);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
                     ed.WriteMessage("\n  Text/MText deleted by layer: {0}", result.TextDeletedByLayer);
@@ -169,11 +171,15 @@ namespace DraftingSuite
 
                 ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesAfterBurst, "after burst");
 
-                if (settings.ConvertLinesTo3dPolylines)
-                    ConvertLinesTo3dPolylines(tr, candidateIds, result);
+                PruneExtractedGraphicsByLayer(tr, createdIds, result, settings);
 
-                List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
-                annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotation(GetEntityOrNull(tr, id))));
+                if (settings.ConvertLinesTo3dPolylines)
+                    ConvertLinesTo3dPolylines(tr, candidateIds, result, settings);
+
+                List<ObjectId> annotationIds = createdIds
+                    .Where(id => IsDraftingAnnotationForSettings(GetEntityOrNull(tr, id), settings, false, result))
+                    .ToList();
+                annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotationForSettings(GetEntityOrNull(tr, id), settings, true, result)));
 
                 DeleteTinyText(tr, annotationIds, result, settings.TinyTextDeleteHeight);
 
@@ -182,7 +188,7 @@ namespace DraftingSuite
 
                 if (settings.FlattenAnnotation)
                 {
-                    List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr);
+                    List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr, settings, result);
                     FlattenObjects(tr, flattenIds, result, settings);
                 }
 
@@ -428,6 +434,37 @@ namespace DraftingSuite
             }
         }
 
+        private static void PruneExtractedGraphicsByLayer(Transaction tr, List<ObjectId> createdIds, FbkPrepResult result, DraftingSuiteSettings settings)
+        {
+            bool hasResultRules = HasWildcardRules(settings.ResultLayerPatterns);
+            bool hasAnnotationRules = HasWildcardRules(settings.AnnotationLayerPatterns);
+            if (!hasResultRules && !hasAnnotationRules)
+                return;
+
+            foreach (ObjectId id in createdIds.ToList())
+            {
+                Entity entity = GetEntityOrNull(tr, id);
+                if (entity == null || entity.IsErased)
+                    continue;
+
+                bool keepAsResult = hasResultRules && MatchesAnyWildcard(entity.Layer, settings.ResultLayerPatterns);
+                bool keepAsAnnotation = hasAnnotationRules && MatchesAnyWildcard(entity.Layer, settings.AnnotationLayerPatterns);
+                if (keepAsResult || keepAsAnnotation)
+                    continue;
+
+                try
+                {
+                    entity.UpgradeOpen();
+                    entity.Erase();
+                    result.ExtractedGraphicsDeletedByLayer++;
+                }
+                catch (System.Exception ex)
+                {
+                    result.Errors.Add("Extracted graphic layer cleanup skipped " + id.Handle + ": " + ex.Message);
+                }
+            }
+        }
+
         private static void DeleteTextByLayerRule(Entity entity, ObjectId id, FbkPrepResult result)
         {
             try
@@ -492,13 +529,14 @@ namespace DraftingSuite
             return leader;
         }
 
-        private static List<ObjectId> CollectFlattenIds(List<ObjectId> candidateIds, List<ObjectId> createdIds, Database db, Transaction tr)
+        private static List<ObjectId> CollectFlattenIds(List<ObjectId> candidateIds, List<ObjectId> createdIds, Database db, Transaction tr, DraftingSuiteSettings settings, FbkPrepResult result)
         {
-            HashSet<ObjectId> ids = new HashSet<ObjectId>(createdIds);
+            HashSet<ObjectId> ids = new HashSet<ObjectId>(
+                createdIds.Where(id => IsDraftingAnnotationForSettings(GetEntityOrNull(tr, id), settings, false, result)));
             foreach (ObjectId id in candidateIds)
             {
                 Entity entity = GetEntityOrNull(tr, id);
-                if (IsDraftingAnnotation(entity))
+                if (IsDraftingAnnotationForSettings(entity, settings, true, result))
                     ids.Add(id);
             }
 
@@ -526,12 +564,14 @@ namespace DraftingSuite
             }
         }
 
-        private static void ConvertLinesTo3dPolylines(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result)
+        private static void ConvertLinesTo3dPolylines(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result, DraftingSuiteSettings settings)
         {
             foreach (ObjectId id in ids.ToList())
             {
                 Line line = GetEntityOrNull(tr, id) as Line;
                 if (line == null || line.IsErased)
+                    continue;
+                if (IsProtectedSourceEntity(line, settings, result))
                     continue;
 
                 try
@@ -1092,6 +1132,38 @@ namespace DraftingSuite
                    entity is Dimension;
         }
 
+        private static bool IsDraftingAnnotationForSettings(Entity entity, DraftingSuiteSettings settings, bool sourceEntity, FbkPrepResult result)
+        {
+            if (!IsDraftingAnnotation(entity))
+                return false;
+
+            if (sourceEntity && IsProtectedSourceEntity(entity, settings, result))
+                return false;
+
+            return MatchesOptionalWildcardRules(entity.Layer, settings.AnnotationLayerPatterns);
+        }
+
+        private static bool IsProtectedSourceEntity(Entity entity, DraftingSuiteSettings settings, FbkPrepResult result)
+        {
+            if (entity == null || !HasWildcardRules(settings.ProtectedSourceLayerPatterns))
+                return false;
+            if (!MatchesAnyWildcard(entity.Layer, settings.ProtectedSourceLayerPatterns))
+                return false;
+
+            result.RecordProtectedSourceObject(entity.ObjectId);
+            return true;
+        }
+
+        private static bool MatchesOptionalWildcardRules(string value, IEnumerable<string> patterns)
+        {
+            return !HasWildcardRules(patterns) || MatchesAnyWildcard(value, patterns);
+        }
+
+        private static bool HasWildcardRules(IEnumerable<string> patterns)
+        {
+            return patterns != null && patterns.Any(pattern => !string.IsNullOrWhiteSpace(pattern));
+        }
+
         private static bool IsAnonymousBlockReference(Transaction tr, ObjectId id)
         {
             try
@@ -1305,6 +1377,8 @@ namespace DraftingSuite
             public int SurveyNetworksDeleted { get; set; }
             public int BlockReferencesExploded { get; set; }
             public int AnonymousBlocksBurst { get; set; }
+            public int ExtractedGraphicsDeletedByLayer { get; set; }
+            public int ProtectedSourceObjectsSkipped { get; private set; }
             public int LinesConvertedTo3dPolylines { get; set; }
             public int TinyTextDeleted { get; set; }
             public int TextDeletedByLayer { get; set; }
@@ -1315,6 +1389,15 @@ namespace DraftingSuite
             public int CogoPointsRestyled { get; set; }
             public int CogoPointStyleSkipped { get; set; }
             public List<string> Errors { get; } = new List<string>();
+            private HashSet<ObjectId> ProtectedSourceObjectIds { get; } = new HashSet<ObjectId>();
+
+            public void RecordProtectedSourceObject(ObjectId id)
+            {
+                if (id.IsNull || !ProtectedSourceObjectIds.Add(id))
+                    return;
+
+                ProtectedSourceObjectsSkipped++;
+            }
         }
     }
 }

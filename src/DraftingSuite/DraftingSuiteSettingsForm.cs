@@ -183,11 +183,11 @@ namespace DraftingSuite
             flattenSkipBlocksBox = AddMultiline(layers, "Do not flatten blocks");
             AddHelpText(layers, "Wildcard block-name list skipped by flattening, such as BL_PT_*.");
             protectedLayersBox = AddMultiline(layers, "Protected source layers");
-            AddHelpText(layers, "Wildcard source-layer list meant to protect original point-related source objects during COGO graphic extraction. FBK Prep stores it in presets, but does not enforce it yet.");
+            AddHelpText(layers, "Wildcard source-layer list for original drawing objects that FBK Prep should not flatten, convert to mleaders, or convert from lines to 3D polylines.");
             resultLayersBox = AddMultiline(layers, "Result layers to keep");
-            AddHelpText(layers, "Wildcard layer list meant to identify extracted graphics that should remain after the COGO display graphics are exploded and cleaned. FBK Prep stores it in presets, but does not enforce it yet.");
+            AddHelpText(layers, "Wildcard layer list for extracted COGO graphics that should remain after explode and burst cleanup. Extracted graphics outside this list and the annotation list are deleted.");
             annotationLayersBox = AddMultiline(layers, "Annotation layers to keep");
-            AddHelpText(layers, "Wildcard layer list meant to identify text, mtext, mleaders, leaders, dimensions, and blocks as drafting annotation for conversion or flattening. FBK Prep currently uses object type instead of this list.");
+            AddHelpText(layers, "Wildcard layer list for extracted or original text, mtext, mleaders, leaders, dimensions, and blocks that can be converted to mleaders or flattened.");
             tabs.TabPages.Add(CreateTabPage("Layers && Flatten", layers));
 
             TableLayoutPanel cogo = CreateFieldsTable();
