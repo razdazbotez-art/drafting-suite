@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.22";
+        private const string Version = "0.1.23";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -296,6 +296,7 @@ namespace DraftingSuite
 
                     try
                     {
+                        int replacementCount = 0;
                         DBObjectCollection exploded = new DBObjectCollection();
                         block.Explode(exploded);
                         foreach (DBObject obj in exploded)
@@ -312,6 +313,14 @@ namespace DraftingSuite
                             tr.AddNewlyCreatedDBObject(entity, true);
                             if (knownIds.Add(createdId))
                                 candidateIds.Add(createdId);
+                            replacementCount++;
+                        }
+
+                        replacementCount += AppendAttributeText(db, tr, block, modelSpace, candidateIds, knownIds);
+                        if (replacementCount == 0)
+                        {
+                            result.Errors.Add("Anonymous block burst created no replacement objects " + id.Handle + "; original block was kept.");
+                            continue;
                         }
 
                         block.UpgradeOpen();
@@ -432,6 +441,46 @@ namespace DraftingSuite
                     result.Errors.Add("Text to mleader skipped " + id.Handle + ": " + ex.Message);
                 }
             }
+        }
+
+        private static int AppendAttributeText(Database db, Transaction tr, BlockReference block, BlockTableRecord owner, List<ObjectId> candidateIds, HashSet<ObjectId> knownIds)
+        {
+            int created = 0;
+            foreach (ObjectId attributeId in block.AttributeCollection)
+            {
+                AttributeReference attribute = tr.GetObject(attributeId, OpenMode.ForRead, false) as AttributeReference;
+                if (attribute == null || attribute.IsErased || attribute.Invisible || string.IsNullOrWhiteSpace(attribute.TextString))
+                    continue;
+
+                DBText text = new DBText();
+                text.SetDatabaseDefaults(db);
+                text.SetPropertiesFrom(attribute);
+                text.TextString = attribute.TextString;
+                text.Position = attribute.Position;
+                text.Height = attribute.Height;
+                text.Rotation = attribute.Rotation;
+                text.Layer = attribute.Layer;
+                text.TextStyleId = attribute.TextStyleId;
+                text.WidthFactor = attribute.WidthFactor;
+                text.Oblique = attribute.Oblique;
+                text.HorizontalMode = attribute.HorizontalMode;
+                text.VerticalMode = attribute.VerticalMode;
+                try
+                {
+                    text.AlignmentPoint = attribute.AlignmentPoint;
+                }
+                catch
+                {
+                }
+
+                ObjectId createdId = owner.AppendEntity(text);
+                tr.AddNewlyCreatedDBObject(text, true);
+                if (knownIds.Add(createdId))
+                    candidateIds.Add(createdId);
+                created++;
+            }
+
+            return created;
         }
 
         private static void PruneExtractedGraphicsByLayer(Transaction tr, List<ObjectId> createdIds, FbkPrepResult result, DraftingSuiteSettings settings)
