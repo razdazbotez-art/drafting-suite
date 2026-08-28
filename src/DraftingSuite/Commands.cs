@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.15";
+        private const string Version = "0.1.16";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -61,6 +61,7 @@ namespace DraftingSuite
                         ed.WriteMessage("\n  Preset: {0}", settings.PresetName);
                     ed.WriteMessage("\n  COGO points found: {0}", result.CogoPointsFound);
                     ed.WriteMessage("\n  COGO display objects created: {0}", result.CogoDisplayObjectsCreated);
+                    ed.WriteMessage("\n  Survey networks deleted: {0}", result.SurveyNetworksDeleted);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
@@ -156,6 +157,9 @@ namespace DraftingSuite
                 List<ObjectId> createdIds = settings.ExtractCogoDisplayGraphics
                     ? ExplodeCogoDisplayGraphics(db, tr, cogoIds, result)
                     : new List<ObjectId>();
+
+                if (settings.DeleteSurveyNetworks)
+                    DeleteSurveyNetworks(tr, candidateIds, result);
 
                 if (settings.BurstInserts)
                     BurstAnonymousBlocks(db, tr, createdIds, result, settings.MaxAnonymousBurstPasses);
@@ -433,6 +437,27 @@ namespace DraftingSuite
             }
 
             return ids.ToList();
+        }
+
+        private static void DeleteSurveyNetworks(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result)
+        {
+            foreach (ObjectId id in ids.ToList())
+            {
+                DBObject obj = GetDBObjectOrNull(tr, id);
+                if (!IsSurveyNetwork(obj))
+                    continue;
+
+                try
+                {
+                    obj = tr.GetObject(id, OpenMode.ForWrite, false);
+                    obj.Erase();
+                    result.SurveyNetworksDeleted++;
+                }
+                catch (System.Exception ex)
+                {
+                    result.Errors.Add("Survey network delete skipped " + id.Handle + ": " + ex.Message);
+                }
+            }
         }
 
         private static void ConvertLinesTo3dPolylines(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result)
@@ -1070,6 +1095,24 @@ namespace DraftingSuite
                    typeName.IndexOf("CogoPoint", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool IsSurveyNetwork(DBObject obj)
+        {
+            if (obj == null)
+                return false;
+
+            RXClass rx = obj.GetRXClass();
+            string dxfName = rx?.DxfName ?? string.Empty;
+            string rxName = rx?.Name ?? string.Empty;
+            string typeName = obj.GetType().FullName ?? obj.GetType().Name;
+
+            return (dxfName.IndexOf("SURVEY", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    dxfName.IndexOf("NETWORK", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                   rxName.IndexOf("SurveyNetwork", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   rxName.IndexOf("AeccSurveyNetworkEntity", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   typeName.IndexOf("SurveyNetwork", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   typeName.IndexOf("AeccSurveyNetworkEntity", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static TextInfo ReadTextInfo(Entity entity)
         {
             if (entity is DBText dbText)
@@ -1174,6 +1217,7 @@ namespace DraftingSuite
         {
             public int CogoPointsFound { get; set; }
             public int CogoDisplayObjectsCreated { get; set; }
+            public int SurveyNetworksDeleted { get; set; }
             public int AnonymousBlocksBurst { get; set; }
             public int LinesConvertedTo3dPolylines { get; set; }
             public int TinyTextDeleted { get; set; }

@@ -17,6 +17,7 @@ namespace DraftingSuite
         private CheckBox flattenCheck;
         private CheckBox restyleCheck;
         private CheckBox convertLinesCheck;
+        private CheckBox deleteSurveyNetworksCheck;
         private TextBox offsetXBox;
         private TextBox offsetYBox;
         private TextBox flattenElevationBox;
@@ -151,6 +152,7 @@ namespace DraftingSuite
             flattenCheck = AddCheck(fields, "Flatten annotation");
             restyleCheck = AddCheck(fields, "Restyle COGO points");
             convertLinesCheck = AddCheck(fields, "Convert lines to 3D polylines");
+            deleteSurveyNetworksCheck = AddCheck(fields, "Delete survey network");
             offsetXBox = AddText(fields, "MLeader offset X");
             offsetYBox = AddText(fields, "MLeader offset Y");
             flattenElevationBox = AddText(fields, "Flatten elevation");
@@ -245,6 +247,7 @@ namespace DraftingSuite
             flattenCheck.Checked = settings.FlattenAnnotation;
             restyleCheck.Checked = settings.RestyleCogoPoints;
             convertLinesCheck.Checked = settings.ConvertLinesTo3dPolylines;
+            deleteSurveyNetworksCheck.Checked = settings.DeleteSurveyNetworks;
             offsetXBox.Text = FormatDouble(settings.MLeaderTextOffsetX);
             offsetYBox.Text = FormatDouble(settings.MLeaderTextOffsetY);
             flattenElevationBox.Text = FormatDouble(settings.FlattenElevation);
@@ -284,6 +287,7 @@ namespace DraftingSuite
                 FlattenAnnotation = flattenCheck.Checked,
                 RestyleCogoPoints = restyleCheck.Checked,
                 ConvertLinesTo3dPolylines = convertLinesCheck.Checked,
+                DeleteSurveyNetworks = deleteSurveyNetworksCheck.Checked,
                 MLeaderTextOffsetX = offsetX,
                 MLeaderTextOffsetY = offsetY,
                 FlattenElevation = flattenElevation,

@@ -30,63 +30,66 @@ namespace DraftingSuite
         public bool ConvertLinesTo3dPolylines { get; set; } = true;
 
         [DataMember(Order = 6)]
-        public double MLeaderTextOffsetX { get; set; } = 15.0;
+        public bool DeleteSurveyNetworks { get; set; } = true;
 
         [DataMember(Order = 7)]
-        public double MLeaderTextOffsetY { get; set; } = 15.0;
+        public double MLeaderTextOffsetX { get; set; } = 15.0;
 
         [DataMember(Order = 8)]
-        public double FlattenElevation { get; set; } = 0.0;
+        public double MLeaderTextOffsetY { get; set; } = 15.0;
 
         [DataMember(Order = 9)]
-        public string CogoPointStyleName { get; set; } = "Standard";
+        public double FlattenElevation { get; set; } = 0.0;
 
         [DataMember(Order = 10)]
-        public string CogoLabelStyleName { get; set; } = "Standard";
+        public string CogoPointStyleName { get; set; } = "Standard";
 
         [DataMember(Order = 11)]
-        public List<string> ProtectedSourceLayerPatterns { get; set; } = new List<string> { "*pnt", "*pnts", "*node*" };
+        public string CogoLabelStyleName { get; set; } = "Standard";
 
         [DataMember(Order = 12)]
-        public List<string> ResultLayerPatterns { get; set; } = new List<string> { "*RNDM", "*NODE-TOPO*", "*TOPO-SPOT*" };
+        public List<string> ProtectedSourceLayerPatterns { get; set; } = new List<string> { "*pnt", "*pnts", "*node*" };
 
         [DataMember(Order = 13)]
-        public List<string> AnnotationLayerPatterns { get; set; } = new List<string> { "*-ANNO*", "*-TEXT*", "*-A", "*0", "*IDEN*" };
+        public List<string> ResultLayerPatterns { get; set; } = new List<string> { "*RNDM", "*NODE-TOPO*", "*TOPO-SPOT*" };
 
         [DataMember(Order = 14)]
-        public double TinyTextDeleteHeight { get; set; } = 1.0;
+        public List<string> AnnotationLayerPatterns { get; set; } = new List<string> { "*-ANNO*", "*-TEXT*", "*-A", "*0", "*IDEN*" };
 
         [DataMember(Order = 15)]
-        public int ExplodePassesBeforeBurst { get; set; } = 2;
+        public double TinyTextDeleteHeight { get; set; } = 1.0;
 
         [DataMember(Order = 16)]
-        public bool BurstInserts { get; set; } = true;
+        public int ExplodePassesBeforeBurst { get; set; } = 2;
 
         [DataMember(Order = 17)]
-        public int ExplodePassesAfterBurst { get; set; } = 1;
+        public bool BurstInserts { get; set; } = true;
 
         [DataMember(Order = 18)]
-        public int MaxAnonymousBurstPasses { get; set; } = 8;
+        public int ExplodePassesAfterBurst { get; set; } = 1;
 
         [DataMember(Order = 19)]
-        public string PresetName { get; set; } = string.Empty;
+        public int MaxAnonymousBurstPasses { get; set; } = 8;
 
         [DataMember(Order = 20)]
-        public string PresetFolderPath { get; set; } = string.Empty;
+        public string PresetName { get; set; } = string.Empty;
 
         [DataMember(Order = 21)]
-        public string DefaultPresetName { get; set; } = string.Empty;
+        public string PresetFolderPath { get; set; } = string.Empty;
 
         [DataMember(Order = 22)]
-        public List<string> MLeaderIgnoreLayerPatterns { get; set; } = new List<string> { "*-PNT" };
+        public string DefaultPresetName { get; set; } = string.Empty;
 
         [DataMember(Order = 23)]
-        public List<string> MLeaderDeleteLayerPatterns { get; set; } = new List<string> { "*-PNT" };
+        public List<string> MLeaderIgnoreLayerPatterns { get; set; } = new List<string> { "*-PNT" };
 
         [DataMember(Order = 24)]
-        public List<string> MLeaderKeepTextLayerPatterns { get; set; } = new List<string>();
+        public List<string> MLeaderDeleteLayerPatterns { get; set; } = new List<string> { "*-PNT" };
 
         [DataMember(Order = 25)]
+        public List<string> MLeaderKeepTextLayerPatterns { get; set; } = new List<string>();
+
+        [DataMember(Order = 26)]
         public List<string> FlattenSkipBlockNamePatterns { get; set; } = new List<string> { "BL_PT_*" };
 
         public static string SettingsPath
@@ -144,6 +147,7 @@ namespace DraftingSuite
         private void OnDeserializing(StreamingContext context)
         {
             ConvertLinesTo3dPolylines = true;
+            DeleteSurveyNetworks = true;
         }
 
         public static string[] ListPresetNames(string folderPath)
