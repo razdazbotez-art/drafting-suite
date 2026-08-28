@@ -309,6 +309,8 @@ namespace DraftingSuite
             try
             {
                 settings.Save();
+                if (!string.IsNullOrWhiteSpace(settings.PresetName))
+                    settings.SavePreset(settings.PresetName);
                 Close();
             }
             catch (Exception ex)

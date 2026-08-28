@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.9";
+        private const string Version = "0.1.10";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -769,17 +769,46 @@ namespace DraftingSuite
 
         private static ObjectId FindStyleIdByNameIndexer(Transaction tr, object value, string styleName, string styleKind)
         {
+            if (value == null)
+                return ObjectId.Null;
+
             Type type = value.GetType();
             foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 ParameterInfo[] indexParameters = property.GetIndexParameters();
-                if (indexParameters.Length != 1 || indexParameters[0].ParameterType != typeof(string))
+                if (indexParameters.Length != 1 ||
+                    (indexParameters[0].ParameterType != typeof(string) && indexParameters[0].ParameterType != typeof(object)))
                     continue;
 
                 try
                 {
                     object item = property.GetValue(value, new object[] { styleName });
-                    if (item is ObjectId id && TryStyleMatches(tr, id, styleName, styleKind))
+                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind);
+                    if (!id.IsNull)
+                        return id;
+                }
+                catch
+                {
+                }
+            }
+
+            foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            {
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length != 1 ||
+                    (parameters[0].ParameterType != typeof(string) && parameters[0].ParameterType != typeof(object)))
+                    continue;
+
+                string methodName = method.Name ?? string.Empty;
+                if (!string.Equals(methodName, "Item", StringComparison.OrdinalIgnoreCase) &&
+                    methodName.IndexOf("Get", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                try
+                {
+                    object item = method.Invoke(value, new object[] { styleName });
+                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind);
+                    if (!id.IsNull)
                         return id;
                 }
                 catch
@@ -800,13 +829,54 @@ namespace DraftingSuite
             {
                 foreach (object item in enumerable)
                 {
-                    if (item is ObjectId id && TryStyleMatches(tr, id, styleName, styleKind))
+                    ObjectId id = GetStyleObjectId(tr, item, styleName, styleKind);
+                    if (!id.IsNull)
                         return id;
+
+                    if (item is string name && string.Equals(name, styleName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        id = FindStyleIdByNameIndexer(tr, value, styleName, styleKind);
+                        if (!id.IsNull)
+                            return id;
+                    }
                 }
             }
             catch
             {
             }
+
+            return ObjectId.Null;
+        }
+
+        private static ObjectId GetStyleObjectId(Transaction tr, object value, string styleName, string styleKind)
+        {
+            if (value == null)
+                return ObjectId.Null;
+
+            if (value is ObjectId id)
+                return TryStyleMatches(tr, id, styleName, styleKind) ? id : ObjectId.Null;
+
+            if (value is DBObject dbObject)
+            {
+                id = dbObject.ObjectId;
+                return TryStyleMatches(tr, id, styleName, styleKind) ? id : ObjectId.Null;
+            }
+
+            id = GetObjectIdPropertyValue(value, "ObjectId");
+            if (!id.IsNull && TryStyleMatches(tr, id, styleName, styleKind))
+                return id;
+
+            id = GetObjectIdPropertyValue(value, "Id");
+            if (!id.IsNull && TryStyleMatches(tr, id, styleName, styleKind))
+                return id;
+
+            object name = GetPropertyValue(value, "Name");
+            if (!string.Equals(Convert.ToString(name), styleName, StringComparison.OrdinalIgnoreCase))
+                return ObjectId.Null;
+
+            id = GetObjectIdPropertyValue(value, "StyleId");
+            if (!id.IsNull)
+                return id;
 
             return ObjectId.Null;
         }
