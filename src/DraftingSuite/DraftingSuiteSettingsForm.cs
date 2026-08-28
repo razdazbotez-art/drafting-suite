@@ -30,6 +30,7 @@ namespace DraftingSuite
         private TextBox mleaderKeepTextLayersBox;
         private TextBox flattenSkipBlocksBox;
         private TextBox tinyTextBox;
+        private CheckBox explodeNamedBlocksCheck;
         private NumericUpDown explodeBeforeBox;
         private CheckBox burstCheck;
         private NumericUpDown explodeAfterBox;
@@ -157,12 +158,14 @@ namespace DraftingSuite
             deleteSurveyNetworksCheck = AddCheck(workflow, "Delete survey network");
             convertLinesCheck = AddCheck(workflow, "Convert lines to 3D polylines");
             restyleCheck = AddCheck(workflow, "Restyle COGO points");
+            explodeNamedBlocksCheck = AddCheck(workflow, "Explode named blocks");
+            AddHelpText(workflow, "Allows regular named block references from the extracted COGO graphics to be exploded. Leave this off unless the client standard requires those blocks to become loose geometry.");
             explodeBeforeBox = AddNumber(workflow, "Explode passes before burst");
-            AddHelpText(workflow, "Explodes regular block references created from COGO graphics before anonymous blocks are burst.");
+            AddHelpText(workflow, "Number of named-block explode passes before anonymous blocks are burst. This is ignored when Explode named blocks is off.");
             burstCheck = AddCheck(workflow, "Burst anonymous blocks");
             maxAnonymousBurstPassesBox = AddNumber(workflow, "Max anonymous burst passes");
             explodeAfterBox = AddNumber(workflow, "Explode passes after burst");
-            AddHelpText(workflow, "Runs more regular block-reference explode passes after bursting, so nested blocks exposed by the burst can still become editable objects.");
+            AddHelpText(workflow, "Number of named-block explode passes after bursting. This is ignored when Explode named blocks is off.");
             tabs.TabPages.Add(CreateTabPage("Workflow", workflow));
 
             TableLayoutPanel text = CreateFieldsTable();
@@ -333,6 +336,7 @@ namespace DraftingSuite
             mleaderKeepTextLayersBox.Text = JoinLines(settings.MLeaderKeepTextLayerPatterns);
             flattenSkipBlocksBox.Text = JoinLines(settings.FlattenSkipBlockNamePatterns);
             tinyTextBox.Text = FormatDouble(settings.TinyTextDeleteHeight);
+            explodeNamedBlocksCheck.Checked = settings.ExplodeNamedBlocks;
             explodeBeforeBox.Value = ClampDecimal(settings.ExplodePassesBeforeBurst, explodeBeforeBox.Minimum, explodeBeforeBox.Maximum);
             burstCheck.Checked = settings.BurstInserts;
             maxAnonymousBurstPassesBox.Value = ClampDecimal(settings.MaxAnonymousBurstPasses, maxAnonymousBurstPassesBox.Minimum, maxAnonymousBurstPassesBox.Maximum);
@@ -374,6 +378,7 @@ namespace DraftingSuite
                 MLeaderKeepTextLayerPatterns = SplitLines(mleaderKeepTextLayersBox.Text),
                 FlattenSkipBlockNamePatterns = SplitLines(flattenSkipBlocksBox.Text),
                 TinyTextDeleteHeight = tinyTextHeight,
+                ExplodeNamedBlocks = explodeNamedBlocksCheck.Checked,
                 ExplodePassesBeforeBurst = (int)explodeBeforeBox.Value,
                 BurstInserts = burstCheck.Checked,
                 MaxAnonymousBurstPasses = (int)maxAnonymousBurstPassesBox.Value,

@@ -92,6 +92,9 @@ namespace DraftingSuite
         [DataMember(Order = 26)]
         public List<string> FlattenSkipBlockNamePatterns { get; set; } = new List<string> { "BL_PT_*" };
 
+        [DataMember(Order = 27)]
+        public bool ExplodeNamedBlocks { get; set; } = false;
+
         public static string SettingsPath
         {
             get

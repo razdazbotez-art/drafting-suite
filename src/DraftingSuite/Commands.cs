@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.29";
+        private const string Version = "0.1.30";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -162,12 +162,14 @@ namespace DraftingSuite
                 if (settings.DeleteSurveyNetworks)
                     DeleteSurveyNetworks(tr, candidateIds, result);
 
-                ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesBeforeBurst, "before burst");
+                if (settings.ExplodeNamedBlocks)
+                    ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesBeforeBurst, "before burst");
 
                 if (settings.BurstInserts)
                     BurstAnonymousBlocks(db, tr, createdIds, result, settings.MaxAnonymousBurstPasses);
 
-                ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesAfterBurst, "after burst");
+                if (settings.ExplodeNamedBlocks)
+                    ExplodeBlockReferences(db, tr, createdIds, result, settings.ExplodePassesAfterBurst, "after burst");
 
                 if (settings.ConvertLinesTo3dPolylines)
                     ConvertLinesTo3dPolylines(tr, candidateIds, result);
