@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.27";
+        private const string Version = "0.1.28";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -1179,12 +1179,37 @@ namespace DraftingSuite
                 if (block == null || block.IsErased || block.BlockTableRecord.IsNull)
                     return false;
 
+                if (HasNamedDynamicDefinition(tr, block))
+                    return false;
+
                 BlockTableRecord definition = tr.GetObject(block.BlockTableRecord, OpenMode.ForRead, false) as BlockTableRecord;
                 if (definition == null || definition.IsFromExternalReference || definition.IsLayout)
                     return false;
 
                 return definition.IsAnonymous ||
                        (!string.IsNullOrEmpty(definition.Name) && definition.Name.StartsWith("*", StringComparison.Ordinal));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool HasNamedDynamicDefinition(Transaction tr, BlockReference block)
+        {
+            try
+            {
+                ObjectId dynamicDefinitionId = GetObjectIdPropertyValue(block, "DynamicBlockTableRecord");
+                if (dynamicDefinitionId.IsNull || dynamicDefinitionId == block.BlockTableRecord)
+                    return false;
+
+                BlockTableRecord dynamicDefinition = tr.GetObject(dynamicDefinitionId, OpenMode.ForRead, false) as BlockTableRecord;
+                if (dynamicDefinition == null)
+                    return false;
+
+                return !dynamicDefinition.IsAnonymous &&
+                       !string.IsNullOrWhiteSpace(dynamicDefinition.Name) &&
+                       !dynamicDefinition.Name.StartsWith("*", StringComparison.Ordinal);
             }
             catch
             {
