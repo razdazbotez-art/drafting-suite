@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.24`
+Current version: `0.1.25`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -20,14 +20,13 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 3. Explode regular block references before anonymous block bursting, using the configured pass count.
 4. Burst nested anonymous block references until no anonymous blocks remain, up to the configured pass limit. Visible attributes are converted to text, and the source block is kept if no replacement objects are created.
 5. Explode regular block references again after bursting, using the configured pass count.
-6. Delete extracted COGO graphics whose layers do not match the configured result or annotation layer wildcards.
-7. Convert regular AutoCAD line entities to two-vertex 3D polylines unless their layer matches a configured COGO point layer wildcard.
-8. Delete text and mtext at or below the configured tiny text height.
-9. Delete text and mtext when its layer matches a configured delete text layer wildcard.
-10. Leave text and mtext as-is when its layer matches a configured keep-as-text layer wildcard.
-11. Convert remaining text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
-12. Flatten drafting annotation to elevation `0`, except COGO point layers and block names matching the configured do-not-flatten wildcard list.
-13. Set Civil 3D COGO point style and label style to `Standard` when those styles are available.
+6. Convert regular AutoCAD line entities to two-vertex 3D polylines.
+7. Delete text and mtext at or below the configured tiny text height.
+8. Delete text and mtext when its layer matches a configured delete text layer wildcard.
+9. Leave text and mtext as-is when its layer matches a configured keep-as-text layer wildcard.
+10. Convert remaining text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
+11. Flatten drafting annotation to elevation `0`, except block names matching the configured do-not-flatten wildcard list.
+12. Set Civil 3D COGO point style and label style to `Standard` when those styles are available.
 
 The command asks whether to process the entire drawing or the current selection. The first version is intentionally conservative: it does not erase the drawing, does not detach references, and does not run the legacy `XCOGO` copy/undo/paste sequence.
 
