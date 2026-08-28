@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.36";
+        private const string Version = "0.1.37";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -533,9 +533,6 @@ namespace DraftingSuite
                 TextInfo text = ReadTextInfo(entity);
                 if (text == null || text.Height >= maxHeight)
                     continue;
-                if (ShouldKeepTextByLayer(text.Layer, settings) || ShouldForceConvertTextByLayer(text.Layer, settings))
-                    continue;
-
                 try
                 {
                     entity.UpgradeOpen();
