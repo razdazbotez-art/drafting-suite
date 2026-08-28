@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.14";
+        private const string Version = "0.1.15";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -62,6 +62,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  COGO points found: {0}", result.CogoPointsFound);
                     ed.WriteMessage("\n  COGO display objects created: {0}", result.CogoDisplayObjectsCreated);
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
+                    ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                     ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
                     ed.WriteMessage("\n  Text/MText deleted by layer: {0}", result.TextDeletedByLayer);
                     ed.WriteMessage("\n  Text/MText kept by layer: {0}", result.TextKeptByLayer);
@@ -158,6 +159,9 @@ namespace DraftingSuite
 
                 if (settings.BurstInserts)
                     BurstAnonymousBlocks(db, tr, createdIds, result, settings.MaxAnonymousBurstPasses);
+
+                if (settings.ConvertLinesTo3dPolylines)
+                    ConvertLinesTo3dPolylines(tr, candidateIds, result);
 
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
                 annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotation(GetEntityOrNull(tr, id))));
@@ -429,6 +433,42 @@ namespace DraftingSuite
             }
 
             return ids.ToList();
+        }
+
+        private static void ConvertLinesTo3dPolylines(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result)
+        {
+            foreach (ObjectId id in ids.ToList())
+            {
+                Line line = GetEntityOrNull(tr, id) as Line;
+                if (line == null || line.IsErased)
+                    continue;
+
+                try
+                {
+                    BlockTableRecord owner = tr.GetObject(line.OwnerId, OpenMode.ForWrite, false) as BlockTableRecord;
+                    if (owner == null)
+                        continue;
+
+                    Point3dCollection vertices = new Point3dCollection
+                    {
+                        line.StartPoint,
+                        line.EndPoint
+                    };
+                    Polyline3d polyline = new Polyline3d(Poly3dType.SimplePoly, vertices, false);
+                    polyline.SetPropertiesFrom(line);
+
+                    owner.AppendEntity(polyline);
+                    tr.AddNewlyCreatedDBObject(polyline, true);
+
+                    line.UpgradeOpen();
+                    line.Erase();
+                    result.LinesConvertedTo3dPolylines++;
+                }
+                catch (System.Exception ex)
+                {
+                    result.Errors.Add("Line to 3D polyline skipped " + id.Handle + ": " + ex.Message);
+                }
+            }
         }
 
         private static void AddCivilDocumentCogoPointIds(List<ObjectId> cogoIds)
@@ -1135,6 +1175,7 @@ namespace DraftingSuite
             public int CogoPointsFound { get; set; }
             public int CogoDisplayObjectsCreated { get; set; }
             public int AnonymousBlocksBurst { get; set; }
+            public int LinesConvertedTo3dPolylines { get; set; }
             public int TinyTextDeleted { get; set; }
             public int TextDeletedByLayer { get; set; }
             public int TextKeptByLayer { get; set; }
