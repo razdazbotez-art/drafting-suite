@@ -146,7 +146,37 @@ namespace DraftingSuite
 
         public static DraftingSuiteSettings CreateDefault()
         {
-            return new DraftingSuiteSettings();
+            return new DraftingSuiteSettings
+            {
+                ExtractCogoDisplayGraphics = true,
+                ConvertTextToMleaders = false,
+                FlattenAnnotation = true,
+                RestyleCogoPoints = true,
+                ConvertLinesTo3dPolylines = true,
+                DeleteSurveyNetworks = true,
+                MLeaderTextOffsetX = 15.0,
+                MLeaderTextOffsetY = 15.0,
+                FlattenElevation = 0.0,
+                CogoPointStyleName = "Standard",
+                CogoLabelStyleName = "Standard",
+                ProtectedSourceLayerPatterns = new List<string> { "*PNT", "*PNTS", "*NODE*" },
+                ResultLayerPatterns = new List<string> { "*RNDM", "*NODE-TOPO*", "*TOPO-SPOT*" },
+                AnnotationLayerPatterns = new List<string> { "*-ANNO*", "*-TEXT*", "*-A", "*0", "*IDEN*" },
+                TinyTextDeleteHeight = 1.01,
+                ExplodePassesBeforeBurst = 2,
+                BurstInserts = true,
+                ExplodePassesAfterBurst = 0,
+                MaxAnonymousBurstPasses = 8,
+                PresetName = "Typical",
+                PresetFolderPath = DefaultPresetFolderPath,
+                DefaultPresetName = "Typical",
+                MLeaderIgnoreLayerPatterns = new List<string> { "*-PNT" },
+                MLeaderDeleteLayerPatterns = new List<string> { "*-PNT" },
+                MLeaderKeepTextLayerPatterns = new List<string> { "VF-USAN*", "VF-USTM*", "VF-TMWL*" },
+                FlattenSkipBlockNamePatterns = new List<string> { "BL_PT_*" },
+                ExplodeNamedBlocks = false,
+                InvertKeepTextLayerPatterns = true
+            };
         }
 
         [OnDeserializing]
