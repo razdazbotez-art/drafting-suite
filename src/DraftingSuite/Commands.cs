@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.35";
+        private const string Version = "0.1.36";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -429,12 +429,13 @@ namespace DraftingSuite
                 TextInfo text = ReadTextInfo(entity);
                 if (text == null)
                     continue;
+                bool forceConvertByLayer = ShouldForceConvertTextByLayer(text.Layer, settings);
                 if (ShouldKeepTextByLayer(text.Layer, settings))
                 {
                     result.TextKeptByLayer++;
                     continue;
                 }
-                if (MatchesAnyWildcard(text.Layer, settings.MLeaderDeleteLayerPatterns))
+                if (!forceConvertByLayer && MatchesAnyWildcard(text.Layer, settings.MLeaderDeleteLayerPatterns))
                 {
                     DeleteTextByLayerRule(entity, id, result);
                     continue;
@@ -532,7 +533,7 @@ namespace DraftingSuite
                 TextInfo text = ReadTextInfo(entity);
                 if (text == null || text.Height >= maxHeight)
                     continue;
-                if (ShouldKeepTextByLayer(text.Layer, settings))
+                if (ShouldKeepTextByLayer(text.Layer, settings) || ShouldForceConvertTextByLayer(text.Layer, settings))
                     continue;
 
                 try
@@ -581,6 +582,14 @@ namespace DraftingSuite
 
             bool matchesKeepRule = MatchesAnyWildcard(layerName, settings.MLeaderKeepTextLayerPatterns);
             return settings.InvertKeepTextLayerPatterns ? !matchesKeepRule : matchesKeepRule;
+        }
+
+        private static bool ShouldForceConvertTextByLayer(string layerName, DraftingSuiteSettings settings)
+        {
+            if (!settings.InvertKeepTextLayerPatterns || !HasWildcardRules(settings.MLeaderKeepTextLayerPatterns))
+                return false;
+
+            return MatchesAnyWildcard(layerName, settings.MLeaderKeepTextLayerPatterns);
         }
 
         private static List<ObjectId> CollectFlattenIds(List<ObjectId> candidateIds, List<ObjectId> createdIds, Database db, Transaction tr, DraftingSuiteSettings settings)

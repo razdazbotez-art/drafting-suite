@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.35`
+Current version: `0.1.36`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -24,7 +24,7 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 7. Convert regular AutoCAD line entities to two-vertex 3D polylines.
 8. Delete extracted text and eligible original text below the configured tiny text height. Text at exactly the configured height is kept.
 9. Delete extracted text and eligible original text when its layer matches a configured delete text layer wildcard.
-10. Leave extracted text and eligible original text as-is when its layer matches a configured keep-as-text layer wildcard. When inverse keep-as-text mode is enabled, non-matching layers are kept and only matching layers can be deleted or converted.
+10. Leave extracted text and eligible original text as-is when its layer matches a configured keep-as-text layer wildcard. When inverse keep-as-text mode is enabled, non-matching layers are kept as text and matching layers are forced to convert to MLeaders without being deleted by tiny text or delete-layer cleanup.
 11. Convert remaining text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
 12. Flatten drafting annotation to elevation `0`, except block names matching the configured do-not-flatten wildcard list.
 13. Set Civil 3D COGO point style and label style to `Standard` when those styles are available.

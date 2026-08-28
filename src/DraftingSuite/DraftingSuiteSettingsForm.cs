@@ -176,7 +176,7 @@ namespace DraftingSuite
             mleaderDeleteLayersBox = AddMultiline(text, "Delete text layers");
             mleaderKeepTextLayersBox = AddMultiline(text, "Keep as text layers");
             invertKeepTextLayersCheck = AddCheck(text, "Invert keep-as-text list");
-            AddHelpText(text, "When off, matching layers are kept as text. When on, non-matching layers are kept as text and only matching layers can be deleted by text cleanup or converted to mleaders.");
+            AddHelpText(text, "When off, matching layers are kept as text. When on, non-matching layers are kept as text and matching layers are forced to convert to mleaders without being deleted by tiny text or delete-layer cleanup.");
             offsetXBox = AddText(text, "MLeader offset X");
             offsetYBox = AddText(text, "MLeader offset Y");
             tabs.TabPages.Add(CreateTabPage("Text && MLeaders", text));
