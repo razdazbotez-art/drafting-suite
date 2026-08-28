@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.31";
+        private const string Version = "0.1.32";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -184,7 +184,7 @@ namespace DraftingSuite
 
                 if (settings.FlattenAnnotation)
                 {
-                    List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr);
+                    List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr, settings);
                     FlattenObjects(tr, flattenIds, result, settings);
                 }
 
@@ -570,7 +570,7 @@ namespace DraftingSuite
             return leader;
         }
 
-        private static List<ObjectId> CollectFlattenIds(List<ObjectId> candidateIds, List<ObjectId> createdIds, Database db, Transaction tr)
+        private static List<ObjectId> CollectFlattenIds(List<ObjectId> candidateIds, List<ObjectId> createdIds, Database db, Transaction tr, DraftingSuiteSettings settings)
         {
             HashSet<ObjectId> ids = new HashSet<ObjectId>(createdIds);
             foreach (ObjectId id in candidateIds)
