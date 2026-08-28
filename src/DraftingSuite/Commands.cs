@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.37";
+        private const string Version = "0.1.38";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -70,6 +70,7 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Text/MText kept by layer: {0}", result.TextKeptByLayer);
                     ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders);
                     ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
+                    ed.WriteMessage("\n  Objects set to ByLayer: {0}", result.ObjectsSetByLayer);
                     ed.WriteMessage("\n  Blocks skipped by flatten rule: {0}", result.BlocksSkippedByFlattenRule);
                     ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
                     if (result.CogoPointStyleSkipped > 0)
@@ -250,6 +251,7 @@ namespace DraftingSuite
                         }
 
                         ApplyInheritedLayer(entity, source.Layer);
+                        ApplyByLayerProperties(entity, result);
                         ObjectId createdId = modelSpace.AppendEntity(entity);
                         tr.AddNewlyCreatedDBObject(entity, true);
                         createdIds.Add(createdId);
@@ -310,6 +312,7 @@ namespace DraftingSuite
                             }
 
                             ApplyInheritedLayer(entity, block.Layer);
+                            ApplyByLayerProperties(entity, result);
                             ObjectId createdId = modelSpace.AppendEntity(entity);
                             tr.AddNewlyCreatedDBObject(entity, true);
                             if (knownIds.Add(createdId))
@@ -317,7 +320,7 @@ namespace DraftingSuite
                             replacementCount++;
                         }
 
-                        replacementCount += AppendAttributeText(db, tr, block, modelSpace, candidateIds, knownIds);
+                        replacementCount += AppendAttributeText(db, tr, block, modelSpace, candidateIds, knownIds, result);
                         if (replacementCount == 0)
                         {
                             result.Errors.Add("Anonymous block burst created no replacement objects " + id.Handle + "; original block was kept.");
@@ -388,6 +391,7 @@ namespace DraftingSuite
                             }
 
                             ApplyInheritedLayer(entity, block.Layer);
+                            ApplyByLayerProperties(entity, result);
                             ObjectId createdId = modelSpace.AppendEntity(entity);
                             tr.AddNewlyCreatedDBObject(entity, true);
                             if (knownIds.Add(createdId))
@@ -432,6 +436,7 @@ namespace DraftingSuite
                 bool forceConvertByLayer = ShouldForceConvertTextByLayer(text.Layer, settings);
                 if (ShouldKeepTextByLayer(text.Layer, settings))
                 {
+                    ApplyByLayerPropertiesForExistingEntity(entity, result);
                     result.TextKeptByLayer++;
                     continue;
                 }
@@ -444,7 +449,7 @@ namespace DraftingSuite
                 try
                 {
                     entity.UpgradeOpen();
-                    MLeader leader = CreateMLeader(db, text, settings);
+                    MLeader leader = CreateMLeader(db, text, settings, result);
                     ObjectId leaderId = modelSpace.AppendEntity(leader);
                     tr.AddNewlyCreatedDBObject(leader, true);
                     entity.Erase();
@@ -458,7 +463,7 @@ namespace DraftingSuite
             }
         }
 
-        private static int AppendAttributeText(Database db, Transaction tr, BlockReference block, BlockTableRecord owner, List<ObjectId> candidateIds, HashSet<ObjectId> knownIds)
+        private static int AppendAttributeText(Database db, Transaction tr, BlockReference block, BlockTableRecord owner, List<ObjectId> candidateIds, HashSet<ObjectId> knownIds, FbkPrepResult result)
         {
             int created = 0;
             foreach (ObjectId attributeId in block.AttributeCollection)
@@ -480,6 +485,7 @@ namespace DraftingSuite
                 text.Oblique = attribute.Oblique;
                 text.HorizontalMode = attribute.HorizontalMode;
                 text.VerticalMode = attribute.VerticalMode;
+                ApplyByLayerProperties(text, result);
                 try
                 {
                     text.AlignmentPoint = attribute.AlignmentPoint;
@@ -546,7 +552,7 @@ namespace DraftingSuite
             }
         }
 
-        private static MLeader CreateMLeader(Database db, TextInfo text, DraftingSuiteSettings settings)
+        private static MLeader CreateMLeader(Database db, TextInfo text, DraftingSuiteSettings settings, FbkPrepResult result)
         {
             Point3d arrowPoint = ToTargetZ(text.Position, settings.FlattenElevation);
             Point3d textPoint = new Point3d(arrowPoint.X + settings.MLeaderTextOffsetX, arrowPoint.Y + settings.MLeaderTextOffsetY, settings.FlattenElevation);
@@ -568,7 +574,67 @@ namespace DraftingSuite
             int lineIndex = leader.AddLeaderLine(leaderIndex);
             leader.AddFirstVertex(lineIndex, arrowPoint);
             leader.AddLastVertex(lineIndex, textPoint);
+            ApplyByLayerProperties(leader, result);
             return leader;
+        }
+
+        private static void ApplyByLayerProperties(Entity entity, FbkPrepResult result)
+        {
+            if (entity == null)
+                return;
+
+            bool changed = false;
+            try
+            {
+                if (entity.Color == null || entity.Color.ColorMethod != Autodesk.AutoCAD.Colors.ColorMethod.ByLayer)
+                {
+                    entity.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(Autodesk.AutoCAD.Colors.ColorMethod.ByLayer, 256);
+                    changed = true;
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (!string.Equals(entity.Linetype, "ByLayer", StringComparison.OrdinalIgnoreCase))
+                {
+                    entity.Linetype = "ByLayer";
+                    changed = true;
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (entity.LineWeight != LineWeight.ByLayer)
+                {
+                    entity.LineWeight = LineWeight.ByLayer;
+                    changed = true;
+                }
+            }
+            catch
+            {
+            }
+
+            if (changed && result != null)
+                result.ObjectsSetByLayer++;
+        }
+
+        private static void ApplyByLayerPropertiesForExistingEntity(Entity entity, FbkPrepResult result)
+        {
+            try
+            {
+                entity.UpgradeOpen();
+                ApplyByLayerProperties(entity, result);
+            }
+            catch (System.Exception ex)
+            {
+                result.Errors.Add("ByLayer cleanup skipped " + entity.ObjectId.Handle + ": " + ex.Message);
+            }
         }
 
         private static bool ShouldKeepTextByLayer(string layerName, DraftingSuiteSettings settings)
@@ -644,6 +710,7 @@ namespace DraftingSuite
                     };
                     Polyline3d polyline = new Polyline3d(Poly3dType.SimplePoly, vertices, false);
                     polyline.SetPropertiesFrom(line);
+                    ApplyByLayerProperties(polyline, result);
 
                     owner.AppendEntity(polyline);
                     tr.AddNewlyCreatedDBObject(polyline, true);
@@ -742,7 +809,10 @@ namespace DraftingSuite
                     }
 
                     if (FlattenEntity(entity, settings.FlattenElevation))
+                    {
                         result.ObjectsFlattened++;
+                        ApplyByLayerProperties(entity, result);
+                    }
                 }
                 catch (System.Exception ex)
                 {
@@ -1454,6 +1524,7 @@ namespace DraftingSuite
             public int TextKeptByLayer { get; set; }
             public int TextConvertedToMleaders { get; set; }
             public int ObjectsFlattened { get; set; }
+            public int ObjectsSetByLayer { get; set; }
             public int BlocksSkippedByFlattenRule { get; set; }
             public int CogoPointsRestyled { get; set; }
             public int CogoPointStyleSkipped { get; set; }

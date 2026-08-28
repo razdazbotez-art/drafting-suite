@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.37`
+Current version: `0.1.38`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -27,7 +27,8 @@ Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the hom
 10. Leave extracted text and eligible original text as-is when its layer matches a configured keep-as-text layer wildcard. When inverse keep-as-text mode is enabled, non-matching layers are kept as text and matching layers are forced to convert to MLeaders. Tiny text below the configured height is still deleted first.
 11. Convert remaining text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
 12. Flatten drafting annotation to elevation `0`, except block names matching the configured do-not-flatten wildcard list.
-13. Set Civil 3D COGO point style and label style to `Standard` when those styles are available.
+13. Set surviving created, converted, flattened, or kept annotation objects to ByLayer for color, linetype, and lineweight.
+14. Set Civil 3D COGO point style and label style to `Standard` when those styles are available.
 
 The command asks whether to process the entire drawing or the current selection. The extraction stage operates on generated output objects rather than deleting original drawing objects the way the legacy `XCOGO` undo/copy/paste sandbox did. Original drawing annotation is only eligible for text deletion, text-to-mleader conversion, or flattening when its layer matches the configured annotation layer list.
 
