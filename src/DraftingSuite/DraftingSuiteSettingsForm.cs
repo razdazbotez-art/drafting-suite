@@ -58,10 +58,9 @@ namespace DraftingSuite
             Controls.Add(root);
 
             DraftingSuiteSettings active = DraftingSuiteSettings.LoadActiveSettings();
-            DraftingSuiteSettings effective = DraftingSuiteSettings.Load();
             defaultPresetName = active.DefaultPresetName;
-            LoadSettings(effective);
-            RefreshPresetList(string.IsNullOrWhiteSpace(effective.PresetName) ? active.DefaultPresetName : effective.PresetName);
+            LoadSettings(active);
+            RefreshPresetList(string.IsNullOrWhiteSpace(active.PresetName) ? active.DefaultPresetName : active.PresetName);
         }
 
         public static void ShowSettingsDialog()
@@ -321,6 +320,7 @@ namespace DraftingSuite
                 settings.Save();
                 if (!string.IsNullOrWhiteSpace(settings.PresetName))
                     settings.SavePreset(settings.PresetName);
+                LoadSettings(DraftingSuiteSettings.LoadActiveSettings());
                 UpdatePresetStatus();
                 return true;
             }
@@ -429,6 +429,8 @@ namespace DraftingSuite
             {
                 settings.DefaultPresetName = defaultPresetName;
                 settings.Save();
+                if (!string.IsNullOrWhiteSpace(defaultPresetName))
+                    settings.SavePreset(defaultPresetName);
                 UpdatePresetStatus();
             }
             catch (Exception ex)
@@ -487,7 +489,8 @@ namespace DraftingSuite
             string folder = string.IsNullOrWhiteSpace(presetFolderBox.Text) ? DraftingSuiteSettings.DefaultPresetFolderPath : presetFolderBox.Text.Trim();
             string selected = string.IsNullOrWhiteSpace(presetCombo.Text) ? "none selected" : presetCombo.Text;
             string defaultText = string.IsNullOrWhiteSpace(defaultPresetName) ? "none" : defaultPresetName;
-            presetStatus.Text = "Presets: " + folder + " | Selected: " + selected + " | Default: " + defaultText;
+            presetStatus.Text = "Settings: " + DraftingSuiteSettings.SettingsPath + Environment.NewLine +
+                                "Presets: " + folder + " | Selected: " + selected + " | Default template: " + defaultText;
         }
 
         private static bool TryReadDouble(TextBox box, string label, out double value)

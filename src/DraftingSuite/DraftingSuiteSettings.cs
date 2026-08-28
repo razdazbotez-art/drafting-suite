@@ -106,20 +106,7 @@ namespace DraftingSuite
 
         public static DraftingSuiteSettings Load()
         {
-            DraftingSuiteSettings active = LoadActiveSettings();
-            if (!string.IsNullOrWhiteSpace(active.DefaultPresetName))
-            {
-                DraftingSuiteSettings preset = LoadPreset(active.DefaultPresetName, active.PresetFolderPath);
-                if (preset != null)
-                {
-                    preset.PresetFolderPath = active.PresetFolderPath;
-                    preset.DefaultPresetName = active.DefaultPresetName;
-                    preset.PresetName = active.DefaultPresetName;
-                    return Normalize(preset);
-                }
-            }
-
-            return active;
+            return LoadActiveSettings();
         }
 
         public static DraftingSuiteSettings LoadActiveSettings()
@@ -136,9 +123,7 @@ namespace DraftingSuite
 
                 using (FileStream stream = File.OpenRead(path))
                 {
-                    DataContractJsonSerializer serializer = new DataContractJsonSerializer(typeof(DraftingSuiteSettings));
-                    DraftingSuiteSettings settings = serializer.ReadObject(stream) as DraftingSuiteSettings;
-                    return Normalize(settings);
+                    return Normalize(ReadFromStream(stream));
                 }
             }
             catch
@@ -182,8 +167,7 @@ namespace DraftingSuite
 
                 using (FileStream stream = File.OpenRead(path))
                 {
-                    DataContractJsonSerializer serializer = new DataContractJsonSerializer(typeof(DraftingSuiteSettings));
-                    DraftingSuiteSettings settings = serializer.ReadObject(stream) as DraftingSuiteSettings;
+                    DraftingSuiteSettings settings = ReadFromStream(stream);
                     settings = Normalize(settings);
                     settings.PresetName = Path.GetFileNameWithoutExtension(path);
                     settings.PresetFolderPath = NormalizePresetFolderPath(folderPath);
@@ -246,6 +230,10 @@ namespace DraftingSuite
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
             DraftingSuiteSettings settings = Normalize(this);
             settings.WriteToPath(SettingsPath);
+            using (FileStream stream = File.OpenRead(SettingsPath))
+            {
+                ReadFromStream(stream);
+            }
         }
 
         private void WriteToPath(string path)
@@ -257,6 +245,16 @@ namespace DraftingSuite
                 string json = Encoding.UTF8.GetString(stream.ToArray());
                 File.WriteAllText(path, json, Encoding.UTF8);
             }
+        }
+
+        private static DraftingSuiteSettings ReadFromStream(Stream stream)
+        {
+            DataContractJsonSerializer serializer = new DataContractJsonSerializer(typeof(DraftingSuiteSettings));
+            DraftingSuiteSettings settings = serializer.ReadObject(stream) as DraftingSuiteSettings;
+            if (settings == null)
+                throw new InvalidDataException("Drafting Suite settings file did not contain settings data.");
+
+            return settings;
         }
 
         private static string GetPresetPath(string presetName, string folderPath)
@@ -286,15 +284,15 @@ namespace DraftingSuite
                 settings.CogoPointStyleName = "Standard";
             if (string.IsNullOrWhiteSpace(settings.CogoLabelStyleName))
                 settings.CogoLabelStyleName = "Standard";
-            if (settings.ProtectedSourceLayerPatterns == null || settings.ProtectedSourceLayerPatterns.Count == 0)
+            if (settings.ProtectedSourceLayerPatterns == null)
                 settings.ProtectedSourceLayerPatterns = new List<string> { "*pnt", "*pnts", "*node*" };
-            if (settings.ResultLayerPatterns == null || settings.ResultLayerPatterns.Count == 0)
+            if (settings.ResultLayerPatterns == null)
                 settings.ResultLayerPatterns = new List<string> { "*RNDM", "*NODE-TOPO*", "*TOPO-SPOT*" };
-            if (settings.AnnotationLayerPatterns == null || settings.AnnotationLayerPatterns.Count == 0)
+            if (settings.AnnotationLayerPatterns == null)
                 settings.AnnotationLayerPatterns = new List<string> { "*-ANNO*", "*-TEXT*", "*-A", "*0", "*IDEN*" };
             if (settings.MLeaderIgnoreLayerPatterns == null)
                 settings.MLeaderIgnoreLayerPatterns = new List<string>();
-            if (settings.MLeaderDeleteLayerPatterns == null || settings.MLeaderDeleteLayerPatterns.Count == 0)
+            if (settings.MLeaderDeleteLayerPatterns == null)
                 settings.MLeaderDeleteLayerPatterns = settings.MLeaderIgnoreLayerPatterns.Count > 0
                     ? new List<string>(settings.MLeaderIgnoreLayerPatterns)
                     : new List<string> { "*-PNT" };
