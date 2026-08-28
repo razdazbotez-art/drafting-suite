@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.30";
+        private const string Version = "0.1.31";
 
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
@@ -175,7 +175,7 @@ namespace DraftingSuite
                     ConvertLinesTo3dPolylines(tr, candidateIds, result);
 
                 List<ObjectId> annotationIds = new List<ObjectId>(createdIds);
-                annotationIds.AddRange(candidateIds.Where(id => IsDraftingAnnotation(GetEntityOrNull(tr, id))));
+                annotationIds.AddRange(candidateIds.Where(id => IsEligibleSourceAnnotation(GetEntityOrNull(tr, id), settings)));
 
                 DeleteTinyText(tr, annotationIds, result, settings.TinyTextDeleteHeight);
 
@@ -576,7 +576,7 @@ namespace DraftingSuite
             foreach (ObjectId id in candidateIds)
             {
                 Entity entity = GetEntityOrNull(tr, id);
-                if (IsDraftingAnnotation(entity))
+                if (IsEligibleSourceAnnotation(entity, settings))
                     ids.Add(id);
             }
 
@@ -1170,6 +1170,15 @@ namespace DraftingSuite
                    entity is Dimension;
         }
 
+        private static bool IsEligibleSourceAnnotation(Entity entity, DraftingSuiteSettings settings)
+        {
+            if (!IsDraftingAnnotation(entity))
+                return false;
+
+            return !HasWildcardRules(settings.AnnotationLayerPatterns)
+                || MatchesAnyWildcard(entity.Layer, settings.AnnotationLayerPatterns);
+        }
+
         private static bool IsAnonymousBlockReference(Transaction tr, ObjectId id)
         {
             try
@@ -1376,6 +1385,11 @@ namespace DraftingSuite
             }
 
             return false;
+        }
+
+        private static bool HasWildcardRules(IEnumerable<string> patterns)
+        {
+            return patterns != null && patterns.Any(pattern => !string.IsNullOrWhiteSpace(pattern));
         }
 
         private static Point3d ToTargetZ(Point3d point, double targetElevation)

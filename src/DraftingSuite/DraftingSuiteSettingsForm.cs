@@ -190,7 +190,7 @@ namespace DraftingSuite
             resultLayersBox = AddMultiline(layers, "Groundshot point layers");
             AddHelpText(layers, "Wildcard layer list saved with presets for groundshot point graphics. It documents the client standard and does not remove generated block output.");
             annotationLayersBox = AddMultiline(layers, "Annotation layers to keep");
-            AddHelpText(layers, "Wildcard layer list saved with presets for expected annotation output. Text deletion and keep-as-text behavior is controlled by the Text and MLeaders tab.");
+            AddHelpText(layers, "Wildcard layer list for original drawing annotation that FBK Prep may delete, convert to mleaders, or flatten. Original text on layers outside this list is left alone.");
             tabs.TabPages.Add(CreateTabPage("Layers && Flatten", layers));
 
             TableLayoutPanel cogo = CreateFieldsTable();
