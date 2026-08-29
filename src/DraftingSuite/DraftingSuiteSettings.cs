@@ -388,7 +388,7 @@ namespace DraftingSuite
             {
                 new CommandPadButtonSetting("FBK Prep", "DSFBKPREP", "Prepare the opened FBK drawing using the active FBK Prep preset.", true),
                 new CommandPadButtonSetting("FBK Prep Config", "DSFBKCONFIG", "Open FBK Prep configuration and presets.", true),
-                new CommandPadButtonSetting("Text to MLeader", "DSMT2ML", "Convert selected text or mtext to mleaders with the leader landing 15 drawing units northeast of the original text.", true),
+                new CommandPadButtonSetting("Text to MLeader", "DSMT2ML", "Convert selected text or mtext to mleaders using the current MLeader style for the landing distance.", true),
                 new CommandPadButtonSetting("Delete Small Text", "DSDELETETINY", "Delete selected text or mtext below the configured small text height.", true),
                 new CommandPadButtonSetting("Flatten to 0", "DSFLATTEN", "Move selected drafting annotation to elevation 0.", true),
                 new CommandPadButtonSetting("Set ByLayer", "DSBYLAYER", "Set selected objects to ByLayer color, linetype, and lineweight.", true),
@@ -476,7 +476,7 @@ namespace DraftingSuite
                 (string.IsNullOrWhiteSpace(description) ||
                  (description ?? string.Empty).IndexOf("configured leader offset", StringComparison.OrdinalIgnoreCase) >= 0))
             {
-                return "Convert selected text or mtext to mleaders with the leader landing 15 drawing units northeast of the original text.";
+                return "Convert selected text or mtext to mleaders using the current MLeader style for the landing distance.";
             }
 
             if (string.Equals(cleanCommand, "DSFLATTEN", StringComparison.OrdinalIgnoreCase) &&

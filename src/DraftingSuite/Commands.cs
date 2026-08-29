@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.52";
+        private const string Version = "0.1.53";
 
         internal static string VersionText => Version;
 
@@ -122,7 +122,7 @@ namespace DraftingSuite
             RunSelectionUtility(
                 "Text to MLeader",
                 "\nSelect text or mtext to convert to mleaders: ",
-                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, CreateStandaloneUtilitySettings(), false),
+                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, CreateStandaloneUtilitySettings(), false, true),
                 (ed, result) => ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders));
         }
 
@@ -344,7 +344,7 @@ namespace DraftingSuite
                 DeleteTinyText(tr, annotationIds, result, settings);
 
                 if (settings.ConvertTextToMleaders)
-                    ConvertTextToMleaders(db, tr, annotationIds, result, settings, true);
+                    ConvertTextToMleaders(db, tr, annotationIds, result, settings, true, false);
 
                 if (settings.FlattenAnnotation)
                 {
@@ -597,7 +597,7 @@ namespace DraftingSuite
             }
         }
 
-        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings, bool applyLayerRules)
+        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings, bool applyLayerRules, bool useStyleBasedLanding)
         {
             BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
             BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -625,7 +625,7 @@ namespace DraftingSuite
                 try
                 {
                     entity.UpgradeOpen();
-                    MLeader leader = CreateMLeader(db, text, settings, result);
+                    MLeader leader = CreateMLeader(db, tr, text, settings, result, useStyleBasedLanding);
                     ObjectId leaderId = modelSpace.AppendEntity(leader);
                     tr.AddNewlyCreatedDBObject(leader, true);
                     entity.Erase();
@@ -728,10 +728,11 @@ namespace DraftingSuite
             }
         }
 
-        private static MLeader CreateMLeader(Database db, TextInfo text, DraftingSuiteSettings settings, FbkPrepResult result)
+        private static MLeader CreateMLeader(Database db, Transaction tr, TextInfo text, DraftingSuiteSettings settings, FbkPrepResult result, bool useStyleBasedLanding)
         {
             Point3d arrowPoint = ToTargetZ(text.Position, settings.FlattenElevation);
-            Point3d textPoint = new Point3d(arrowPoint.X + settings.MLeaderTextOffsetX, arrowPoint.Y + settings.MLeaderTextOffsetY, settings.FlattenElevation);
+            Vector3d landingOffset = GetMLeaderLandingOffset(db, tr, text, settings, useStyleBasedLanding);
+            Point3d textPoint = arrowPoint.Add(landingOffset);
             MText mText = new MText();
             mText.SetDatabaseDefaults(db);
             mText.Contents = text.Contents;
@@ -1008,7 +1009,7 @@ namespace DraftingSuite
                         continue;
                     }
 
-                    if (FlattenEntity(entity, settings.FlattenElevation))
+                    if (FlattenEntity(tr, entity, settings.FlattenElevation))
                     {
                         if (entity is BlockReference)
                             result.BlocksFlattened++;
@@ -1063,7 +1064,7 @@ namespace DraftingSuite
             }
         }
 
-        private static bool FlattenEntity(Entity entity, double targetElevation)
+        private static bool FlattenEntity(Transaction tr, Entity entity, double targetElevation)
         {
             entity.UpgradeOpen();
             if (entity is BlockReference block)
@@ -1114,6 +1115,11 @@ namespace DraftingSuite
                 polyline2d.Elevation = targetElevation;
                 return true;
             }
+            if (entity is Polyline3d polyline3d)
+            {
+                FlattenPolyline3d(tr, polyline3d, targetElevation);
+                return true;
+            }
             if (entity is Circle circle)
             {
                 circle.Center = ToTargetZ(circle.Center, targetElevation);
@@ -1140,6 +1146,57 @@ namespace DraftingSuite
 
             FlattenByExtents(entity, targetElevation);
             return true;
+        }
+
+        private static Vector3d GetMLeaderLandingOffset(Database db, Transaction tr, TextInfo text, DraftingSuiteSettings settings, bool useStyleBasedLanding)
+        {
+            if (!useStyleBasedLanding)
+                return new Vector3d(settings.MLeaderTextOffsetX, settings.MLeaderTextOffsetY, 0.0);
+
+            double textHeight = GetCurrentMLeaderStyleTextHeight(db, tr);
+            if (textHeight <= 0.0)
+                textHeight = text.Height;
+            if (textHeight <= 0.0)
+                textHeight = db.Textsize;
+            if (textHeight <= 0.0)
+                textHeight = 1.0;
+
+            double distance = textHeight * 51.0;
+            return new Vector3d(distance, distance, 0.0);
+        }
+
+        private static double GetCurrentMLeaderStyleTextHeight(Database db, Transaction tr)
+        {
+            ObjectId styleId = GetCurrentMLeaderStyleId(db);
+            if (styleId.IsNull || tr == null)
+                return 0.0;
+
+            try
+            {
+                DBObject style = tr.GetObject(styleId, OpenMode.ForRead, false);
+                object value = GetPropertyValue(style, "TextHeight");
+                return Convert.ToDouble(value);
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private static void FlattenPolyline3d(Transaction tr, Polyline3d polyline, double targetElevation)
+        {
+            foreach (ObjectId vertexId in polyline)
+            {
+                try
+                {
+                    PolylineVertex3d vertex = tr.GetObject(vertexId, OpenMode.ForWrite, false) as PolylineVertex3d;
+                    if (vertex != null)
+                        vertex.Position = ToTargetZ(vertex.Position, targetElevation);
+                }
+                catch
+                {
+                }
+            }
         }
 
         private static void FlattenByExtents(Entity entity, double targetElevation)
