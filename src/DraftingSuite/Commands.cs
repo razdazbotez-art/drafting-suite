@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.54";
+        private const string Version = "0.1.55";
 
         internal static string VersionText => Version;
 
@@ -1162,7 +1162,7 @@ namespace DraftingSuite
             if (textHeight <= 0.0)
                 textHeight = 1.0;
 
-            double distance = textHeight * 51.0;
+            double distance = 15.0;
             return new Vector3d(distance, distance, 0.0);
         }
 
