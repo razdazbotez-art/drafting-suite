@@ -113,26 +113,24 @@ namespace DraftingSuite
                 };
                 section.Controls.Add(padGrid);
 
-                AddPadButton("FBK", "_.DSFBKPREP ", "Prepare the opened FBK drawing using the active Drafting Suite preset.");
-                AddPadButton("Settings", "_.DSSETTINGS ", "Open Drafting Suite settings and presets.");
-                AddPadButton("MT2ML", "_.DSMT2ML ", "Convert selected text or mtext to mleaders using the configured leader offset.");
-                AddPadButton("Tiny", "_.DSDELETETINY ", "Delete selected text or mtext below the configured tiny text height.");
-                AddPadButton("Flat", "_.DSFLATTEN ", "Flatten selected drafting annotation to the configured elevation.");
-                AddPadButton("ByLayer", "_.DSBYLAYER ", "Set selected objects to ByLayer color, linetype, and lineweight.");
-                AddPadButton("3DPoly", "_.DSLINE3D ", "Convert selected lines to 3D polylines and delete COGO-layer lines.");
-                AddPadButton("COGO", "_.DSCOGOSTD ", "Set selected COGO points to the configured point and label styles.");
+                foreach (CommandPadButtonSetting button in DraftingSuiteSettings.LoadActiveSettings().CommandPadButtons)
+                {
+                    if (button.Visible)
+                        AddPadButton(button.Label, button.Command, button.Description);
+                }
                 ConfigurePadGridColumns();
             }
 
             private void AddPadButton(string text, string command, string description)
             {
-                Button button = CreateButton(text, command);
+                string commandName = DraftingSuiteSettings.NormalizeCommandName(command);
+                Button button = CreateButton(text, "_." + commandName + " ");
                 button.Height = 34;
                 button.Margin = new Padding(0, 1, 4, 4);
                 padButtons.Add(button);
                 padGrid.Controls.Add(button);
 
-                toolTip.SetToolTip(button, description + Environment.NewLine + "Command: " + command.Trim().TrimStart('_', '.'));
+                toolTip.SetToolTip(button, description + Environment.NewLine + "Command: " + commandName);
             }
 
             private void ConfigurePadGridColumns()

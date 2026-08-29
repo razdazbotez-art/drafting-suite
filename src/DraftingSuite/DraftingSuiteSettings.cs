@@ -98,6 +98,9 @@ namespace DraftingSuite
         [DataMember(Order = 28)]
         public bool InvertKeepTextLayerPatterns { get; set; } = false;
 
+        [DataMember(Order = 29)]
+        public List<CommandPadButtonSetting> CommandPadButtons { get; set; } = CreateDefaultCommandPadButtons();
+
         public static string SettingsPath
         {
             get
@@ -175,7 +178,8 @@ namespace DraftingSuite
                 MLeaderKeepTextLayerPatterns = new List<string> { "VF-USAN*", "VF-USTM*", "VF-TMWL*" },
                 FlattenSkipBlockNamePatterns = new List<string> { "BL_PT_*" },
                 ExplodeNamedBlocks = false,
-                InvertKeepTextLayerPatterns = true
+                InvertKeepTextLayerPatterns = true,
+                CommandPadButtons = CreateDefaultCommandPadButtons()
             };
         }
 
@@ -371,10 +375,76 @@ namespace DraftingSuite
                 settings.MaxAnonymousBurstPasses = 1;
             if (settings.TinyTextDeleteHeight < 0.0)
                 settings.TinyTextDeleteHeight = 0.0;
+            settings.CommandPadButtons = NormalizeCommandPadButtons(settings.CommandPadButtons);
             settings.PresetName = settings.PresetName ?? string.Empty;
             settings.PresetFolderPath = NormalizePresetFolderPath(settings.PresetFolderPath);
             settings.DefaultPresetName = settings.DefaultPresetName ?? string.Empty;
             return settings;
         }
+
+        public static List<CommandPadButtonSetting> CreateDefaultCommandPadButtons()
+        {
+            return new List<CommandPadButtonSetting>
+            {
+                new CommandPadButtonSetting("FBK Prep", "DSFBKPREP", "Prepare the opened FBK drawing using the active FBK Prep preset.", true),
+                new CommandPadButtonSetting("FBK Prep Config", "DSFBKCONFIG", "Open FBK Prep configuration and presets.", true),
+                new CommandPadButtonSetting("MT2ML", "DSMT2ML", "Convert selected text or mtext to mleaders using the configured leader offset.", true),
+                new CommandPadButtonSetting("Tiny", "DSDELETETINY", "Delete selected text or mtext below the configured tiny text height.", true),
+                new CommandPadButtonSetting("Flat", "DSFLATTEN", "Flatten selected drafting annotation to the configured elevation.", true),
+                new CommandPadButtonSetting("ByLayer", "DSBYLAYER", "Set selected objects to ByLayer color, linetype, and lineweight.", true),
+                new CommandPadButtonSetting("3DPoly", "DSLINE3D", "Convert selected lines to 3D polylines and delete COGO-layer lines.", true),
+                new CommandPadButtonSetting("COGO", "DSCOGOSTD", "Set selected COGO points to the configured point and label styles.", true)
+            };
+        }
+
+        private static List<CommandPadButtonSetting> NormalizeCommandPadButtons(List<CommandPadButtonSetting> buttons)
+        {
+            List<CommandPadButtonSetting> source = buttons == null || buttons.Count == 0
+                ? CreateDefaultCommandPadButtons()
+                : buttons;
+
+            return source
+                .Where(button => button != null)
+                .Select(button => new CommandPadButtonSetting(
+                    string.IsNullOrWhiteSpace(button.Label) ? button.Command : button.Label.Trim(),
+                    NormalizeCommandName(button.Command),
+                    button.Description ?? string.Empty,
+                    button.Visible))
+                .Where(button => !string.IsNullOrWhiteSpace(button.Command))
+                .ToList();
+        }
+
+        internal static string NormalizeCommandName(string command)
+        {
+            return (command ?? string.Empty).Trim().TrimStart('_', '.').Trim();
+        }
+    }
+
+    [DataContract]
+    internal sealed class CommandPadButtonSetting
+    {
+        public CommandPadButtonSetting()
+        {
+        }
+
+        public CommandPadButtonSetting(string label, string command, string description, bool visible)
+        {
+            Label = label;
+            Command = command;
+            Description = description;
+            Visible = visible;
+        }
+
+        [DataMember(Order = 1)]
+        public string Label { get; set; }
+
+        [DataMember(Order = 2)]
+        public string Command { get; set; }
+
+        [DataMember(Order = 3)]
+        public string Description { get; set; }
+
+        [DataMember(Order = 4)]
+        public bool Visible { get; set; } = true;
     }
 }

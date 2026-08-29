@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.44`
+Current version: `0.1.45`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -10,13 +10,14 @@ New installs start with the built-in `Typical` preset.
 
 - `DS` opens the tabbed Drafting Suite palette. The default Pad tab is a compact command pad; shared version and command information lives on the Help tab.
 - `DSFBKPREP` prepares an opened fieldbook drawing for drafting.
+- `DSFBKCONFIG` opens the modeless FBK Prep Config window.
 - `DSMT2ML` converts selected text or mtext to mleaders.
 - `DSDELETETINY` deletes selected text or mtext below the configured tiny text height.
 - `DSFLATTEN` flattens selected drafting annotation to the configured elevation.
 - `DSBYLAYER` sets selected objects to ByLayer color, linetype, and lineweight.
 - `DSLINE3D` converts selected lines to 3D polylines and deletes lines on configured COGO point layers.
 - `DSCOGOSTD` sets selected COGO points to the configured point and label styles.
-- `DSSETTINGS` opens the modeless Drafting Suite settings window.
+- `DSSETTINGS` opens the modeless FBK Prep Config window.
 - `DSVERSION` prints the loaded Drafting Suite version.
 
 ## FBK Prep
@@ -41,4 +42,4 @@ New installs start with the built-in `Typical` preset.
 
 The command asks whether to process the entire drawing or the current selection. The extraction stage operates on generated output objects rather than deleting original drawing objects the way the legacy `XCOGO` undo/copy/paste sandbox did. Original drawing annotation is only eligible for text deletion, text-to-mleader conversion, or flattening when its layer matches the configured annotation layer list.
 
-Settings are stored in `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSuite\settings.json`. Presets are JSON files stored in the configured preset folder, which defaults to `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSuite\Presets`. The settings dialog can load, save, rename, delete, and set a default preset for client or template standards.
+FBK Prep Config values are stored in `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSuite\settings.json`. Presets are JSON files stored in the configured preset folder, which defaults to `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSuite\Presets`. The config window can load, save, rename, delete, and set a default preset for client or template standards.

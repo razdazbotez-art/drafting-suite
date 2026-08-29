@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -37,11 +38,18 @@ namespace DraftingSuite
         private CheckBox burstCheck;
         private NumericUpDown explodeAfterBox;
         private NumericUpDown maxAnonymousBurstPassesBox;
+        private ListBox padButtonList;
+        private TextBox padLabelBox;
+        private ComboBox padCommandBox;
+        private TextBox padDescriptionBox;
+        private CheckBox padVisibleCheck;
+        private List<CommandPadButtonSetting> padButtons = new List<CommandPadButtonSetting>();
+        private bool loadingPadButton;
         private string defaultPresetName;
 
         private DraftingSuiteSettingsForm()
         {
-            Text = "Drafting Suite Settings";
+            Text = "FBK Prep Config";
             Width = 700;
             Height = 560;
             MinimumSize = new System.Drawing.Size(620, 500);
@@ -165,6 +173,8 @@ namespace DraftingSuite
                 Dock = DockStyle.Fill
             };
 
+            tabs.TabPages.Add(CreateTabPage("Pad Config", BuildPadConfigPanel()));
+
             TableLayoutPanel workflow = CreateFieldsTable();
             extractCogoCheck = AddCheck(workflow, "Extract COGO graphics");
             deleteSurveyNetworksCheck = AddCheck(workflow, "Delete survey network");
@@ -213,6 +223,95 @@ namespace DraftingSuite
             tabs.TabPages.Add(CreateTabPage("COGO", cogo));
 
             return tabs;
+        }
+
+        private Control BuildPadConfigPanel()
+        {
+            TableLayoutPanel panel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                Padding = new Padding(10)
+            };
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+            padButtonList = new ListBox { Dock = DockStyle.Fill };
+            padButtonList.SelectedIndexChanged += (_, __) => LoadSelectedPadButton();
+            panel.Controls.Add(padButtonList, 0, 0);
+
+            TableLayoutPanel editor = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 2,
+                Padding = new Padding(8, 0, 0, 0)
+            };
+            editor.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+            editor.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            panel.Controls.Add(editor, 1, 0);
+
+            padVisibleCheck = new CheckBox { Text = "Visible on Pad", AutoSize = true, Dock = DockStyle.Top };
+            padVisibleCheck.CheckedChanged += (_, __) => SaveSelectedPadButton();
+            AddPadConfigRow(editor, string.Empty, padVisibleCheck);
+
+            padLabelBox = AddPadConfigText(editor, "Button label");
+            padLabelBox.Leave += (_, __) => SaveSelectedPadButton();
+
+            padCommandBox = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
+            padCommandBox.Items.AddRange(new object[]
+            {
+                "DSFBKPREP",
+                "DSFBKCONFIG",
+                "DSMT2ML",
+                "DSDELETETINY",
+                "DSFLATTEN",
+                "DSBYLAYER",
+                "DSLINE3D",
+                "DSCOGOSTD"
+            });
+            padCommandBox.SelectedIndexChanged += (_, __) => SaveSelectedPadButton();
+            AddPadConfigRow(editor, "Command", padCommandBox);
+
+            padDescriptionBox = AddPadConfigText(editor, "Tooltip");
+            padDescriptionBox.Height = 54;
+            padDescriptionBox.Multiline = true;
+            padDescriptionBox.ScrollBars = ScrollBars.Vertical;
+            padDescriptionBox.Leave += (_, __) => SaveSelectedPadButton();
+
+            FlowLayoutPanel actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true
+            };
+            Button moveUp = new Button { Text = "Move Up", Width = 82 };
+            Button moveDown = new Button { Text = "Move Down", Width = 92 };
+            Button reset = new Button { Text = "Reset Pad", Width = 92 };
+            moveUp.Click += (_, __) => MoveSelectedPadButton(-1);
+            moveDown.Click += (_, __) => MoveSelectedPadButton(1);
+            reset.Click += (_, __) => ResetPadButtons();
+            actions.Controls.Add(moveUp);
+            actions.Controls.Add(moveDown);
+            actions.Controls.Add(reset);
+            AddPadConfigRow(editor, string.Empty, actions);
+
+            return panel;
+        }
+
+        private TextBox AddPadConfigText(TableLayoutPanel panel, string label)
+        {
+            TextBox box = new TextBox { Dock = DockStyle.Top };
+            AddPadConfigRow(panel, label, box);
+            return box;
+        }
+
+        private static void AddPadConfigRow(TableLayoutPanel panel, string label, Control control)
+        {
+            Label rowLabel = new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 8, 3) };
+            panel.Controls.Add(rowLabel);
+            panel.Controls.Add(control);
         }
 
         private static TableLayoutPanel CreateFieldsTable()
@@ -356,6 +455,8 @@ namespace DraftingSuite
             burstCheck.Checked = settings.BurstInserts;
             maxAnonymousBurstPassesBox.Value = ClampDecimal(settings.MaxAnonymousBurstPasses, maxAnonymousBurstPassesBox.Minimum, maxAnonymousBurstPassesBox.Maximum);
             explodeAfterBox.Value = ClampDecimal(settings.ExplodePassesAfterBurst, explodeAfterBox.Minimum, explodeAfterBox.Maximum);
+            padButtons = ClonePadButtons(settings.CommandPadButtons);
+            RefreshPadButtonList(0);
             presetFolderBox.Text = settings.PresetFolderPath;
             defaultPresetName = settings.DefaultPresetName ?? defaultPresetName ?? string.Empty;
             SelectPreset(settings.PresetName);
@@ -399,10 +500,120 @@ namespace DraftingSuite
                 BurstInserts = burstCheck.Checked,
                 MaxAnonymousBurstPasses = (int)maxAnonymousBurstPassesBox.Value,
                 ExplodePassesAfterBurst = (int)explodeAfterBox.Value,
+                CommandPadButtons = ClonePadButtons(padButtons),
                 PresetName = presetCombo.Text,
                 PresetFolderPath = presetFolderBox.Text.Trim(),
                 DefaultPresetName = defaultPresetName
             };
+        }
+
+        private void RefreshPadButtonList(int selectedIndex)
+        {
+            if (padButtonList == null)
+                return;
+
+            padButtonList.Items.Clear();
+            foreach (CommandPadButtonSetting button in padButtons)
+                padButtonList.Items.Add((button.Visible ? "[x] " : "[ ] ") + button.Label + " -> " + button.Command);
+
+            if (padButtonList.Items.Count == 0)
+            {
+                ClearPadButtonEditor();
+                return;
+            }
+
+            if (selectedIndex < 0)
+                selectedIndex = 0;
+            if (selectedIndex >= padButtonList.Items.Count)
+                selectedIndex = padButtonList.Items.Count - 1;
+            padButtonList.SelectedIndex = selectedIndex;
+        }
+
+        private void LoadSelectedPadButton()
+        {
+            if (padButtonList == null || padButtonList.SelectedIndex < 0 || padButtonList.SelectedIndex >= padButtons.Count)
+            {
+                ClearPadButtonEditor();
+                return;
+            }
+
+            CommandPadButtonSetting button = padButtons[padButtonList.SelectedIndex];
+            loadingPadButton = true;
+            padVisibleCheck.Checked = button.Visible;
+            padLabelBox.Text = button.Label ?? string.Empty;
+            SelectPadCommand(button.Command);
+            padDescriptionBox.Text = button.Description ?? string.Empty;
+            loadingPadButton = false;
+        }
+
+        private void SaveSelectedPadButton()
+        {
+            if (loadingPadButton || padButtonList == null || padButtonList.SelectedIndex < 0 || padButtonList.SelectedIndex >= padButtons.Count)
+                return;
+
+            int index = padButtonList.SelectedIndex;
+            CommandPadButtonSetting button = padButtons[index];
+            button.Visible = padVisibleCheck.Checked;
+            button.Label = padLabelBox.Text.Trim();
+            button.Command = DraftingSuiteSettings.NormalizeCommandName(Convert.ToString(padCommandBox.SelectedItem));
+            button.Description = padDescriptionBox.Text.Trim();
+            RefreshPadButtonList(index);
+        }
+
+        private void MoveSelectedPadButton(int direction)
+        {
+            SaveSelectedPadButton();
+            int index = padButtonList.SelectedIndex;
+            int newIndex = index + direction;
+            if (index < 0 || newIndex < 0 || newIndex >= padButtons.Count)
+                return;
+
+            CommandPadButtonSetting button = padButtons[index];
+            padButtons.RemoveAt(index);
+            padButtons.Insert(newIndex, button);
+            RefreshPadButtonList(newIndex);
+        }
+
+        private void ResetPadButtons()
+        {
+            padButtons = ClonePadButtons(DraftingSuiteSettings.CreateDefaultCommandPadButtons());
+            RefreshPadButtonList(0);
+        }
+
+        private void ClearPadButtonEditor()
+        {
+            if (padLabelBox == null)
+                return;
+
+            loadingPadButton = true;
+            padVisibleCheck.Checked = false;
+            padLabelBox.Text = string.Empty;
+            padCommandBox.SelectedIndex = -1;
+            padDescriptionBox.Text = string.Empty;
+            loadingPadButton = false;
+        }
+
+        private void SelectPadCommand(string command)
+        {
+            string normalized = DraftingSuiteSettings.NormalizeCommandName(command);
+            for (int i = 0; i < padCommandBox.Items.Count; i++)
+            {
+                if (string.Equals(Convert.ToString(padCommandBox.Items[i]), normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    padCommandBox.SelectedIndex = i;
+                    return;
+                }
+            }
+
+            padCommandBox.SelectedIndex = -1;
+        }
+
+        private static List<CommandPadButtonSetting> ClonePadButtons(System.Collections.Generic.IEnumerable<CommandPadButtonSetting> source)
+        {
+            return (source ?? DraftingSuiteSettings.CreateDefaultCommandPadButtons())
+                .Where(button => button != null)
+                .Select(button => new CommandPadButtonSetting(button.Label, button.Command, button.Description, button.Visible))
+                .ToList();
         }
 
         private void SaveAndClose()

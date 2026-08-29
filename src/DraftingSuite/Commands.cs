@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.44";
+        private const string Version = "0.1.45";
 
         internal static string VersionText => Version;
 
@@ -101,6 +101,12 @@ namespace DraftingSuite
         public void VersionInfo()
         {
             PrintLoadMessage(Application.DocumentManager.MdiActiveDocument?.Editor);
+        }
+
+        [CommandMethod("DSFBKCONFIG", CommandFlags.Session)]
+        public void OpenFbkPrepConfig()
+        {
+            DraftingSuiteSettingsForm.ShowSettingsDialog();
         }
 
         [CommandMethod("DSSETTINGS", CommandFlags.Session)]
@@ -195,7 +201,7 @@ namespace DraftingSuite
             if (ed == null)
                 return;
 
-            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, DSFBKPREP, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
+            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
             ed.WriteMessage("\n");
         }
 
