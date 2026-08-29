@@ -14,6 +14,7 @@ namespace DraftingSuite
         private const string PaletteSetCommand = "DS";
         private static readonly Guid PaletteSetGuid = new Guid("79e5d67a-5988-4b5d-97e7-4339d1df7d94");
         private static readonly Size DefaultPaletteSize = new Size(340, 300);
+        private static readonly List<DraftingSuitePaletteControl> padControls = new List<DraftingSuitePaletteControl>();
         private static PaletteSet paletteSet;
 
         internal static string StatusPaletteSetName => PaletteSetName;
@@ -24,6 +25,12 @@ namespace DraftingSuite
             EnsureCreated();
             paletteSet.Visible = true;
             paletteSet.Activate(0);
+        }
+
+        internal static void RefreshPad()
+        {
+            foreach (DraftingSuitePaletteControl control in padControls.ToList())
+                control.RefreshPadButtons();
         }
 
         private static void EnsureCreated()
@@ -81,9 +88,15 @@ namespace DraftingSuite
                 Controls.Add(currentRoot);
 
                 if (tab == DraftingSuitePaletteTab.Pad)
+                {
+                    padControls.Add(this);
+                    Disposed += (_, __) => padControls.Remove(this);
                     BuildPadTab();
+                }
                 else
+                {
                     BuildHelpTab();
+                }
 
                 Resize += (_, __) => ConfigurePadGridColumns();
             }
@@ -113,11 +126,23 @@ namespace DraftingSuite
                 };
                 section.Controls.Add(padGrid);
 
+                RefreshPadButtons();
+            }
+
+            public void RefreshPadButtons()
+            {
+                if (padGrid == null)
+                    return;
+
+                padGrid.SuspendLayout();
+                padGrid.Controls.Clear();
+                padButtons.Clear();
                 foreach (CommandPadButtonSetting button in DraftingSuiteSettings.LoadActiveSettings().CommandPadButtons)
                 {
                     if (button.Visible)
                         AddPadButton(button.Label, button.Command, button.Description);
                 }
+                padGrid.ResumeLayout();
                 ConfigurePadGridColumns();
             }
 

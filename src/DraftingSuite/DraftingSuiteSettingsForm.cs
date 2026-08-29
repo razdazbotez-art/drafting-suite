@@ -635,6 +635,7 @@ namespace DraftingSuite
                     settings.SavePreset(settings.PresetName);
                 LoadSettings(DraftingSuiteSettings.LoadActiveSettings());
                 UpdatePresetStatus();
+                DraftingSuitePalette.RefreshPad();
                 return true;
             }
             catch (Exception ex)
@@ -678,6 +679,7 @@ namespace DraftingSuite
                 settings.Save();
                 RefreshPresetList(settings.PresetName);
                 UpdatePresetStatus();
+                DraftingSuitePalette.RefreshPad();
             }
             catch (Exception ex)
             {
@@ -745,6 +747,7 @@ namespace DraftingSuite
                 if (!string.IsNullOrWhiteSpace(defaultPresetName))
                     settings.SavePreset(defaultPresetName);
                 UpdatePresetStatus();
+                DraftingSuitePalette.RefreshPad();
             }
             catch (Exception ex)
             {
