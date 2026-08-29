@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.48";
+        private const string Version = "0.1.49";
 
         internal static string VersionText => Version;
 
@@ -122,7 +122,7 @@ namespace DraftingSuite
             RunSelectionUtility(
                 "Text to MLeader",
                 "\nSelect text or mtext to convert to mleaders: ",
-                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, settings),
+                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, settings, false),
                 (ed, result) => ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders));
         }
 
@@ -327,7 +327,7 @@ namespace DraftingSuite
                 DeleteTinyText(tr, annotationIds, result, settings);
 
                 if (settings.ConvertTextToMleaders)
-                    ConvertTextToMleaders(db, tr, annotationIds, result, settings);
+                    ConvertTextToMleaders(db, tr, annotationIds, result, settings, true);
 
                 if (settings.FlattenAnnotation)
                 {
@@ -580,7 +580,7 @@ namespace DraftingSuite
             }
         }
 
-        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings)
+        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings, bool applyLayerRules)
         {
             BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
             BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -592,14 +592,14 @@ namespace DraftingSuite
                 TextInfo text = ReadTextInfo(entity);
                 if (text == null)
                     continue;
-                bool forceConvertByLayer = ShouldForceConvertTextByLayer(text.Layer, settings);
-                if (ShouldKeepTextByLayer(text.Layer, settings))
+                bool forceConvertByLayer = applyLayerRules && ShouldForceConvertTextByLayer(text.Layer, settings);
+                if (applyLayerRules && ShouldKeepTextByLayer(text.Layer, settings))
                 {
                     ApplyByLayerPropertiesForExistingEntity(entity, result);
                     result.TextKeptByLayer++;
                     continue;
                 }
-                if (!forceConvertByLayer && MatchesAnyWildcard(text.Layer, settings.MLeaderDeleteLayerPatterns))
+                if (applyLayerRules && !forceConvertByLayer && MatchesAnyWildcard(text.Layer, settings.MLeaderDeleteLayerPatterns))
                 {
                     DeleteTextByLayerRule(entity, id, result);
                     continue;
