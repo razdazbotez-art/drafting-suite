@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.55";
+        private const string Version = "0.1.56";
 
         internal static string VersionText => Version;
 
@@ -122,7 +122,7 @@ namespace DraftingSuite
             RunSelectionUtility(
                 "Text to MLeader",
                 "\nSelect text or mtext to convert to mleaders: ",
-                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, CreateStandaloneUtilitySettings(), false, true),
+                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, CreateStandaloneUtilitySettings(), false, true, true),
                 (ed, result) => ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders));
         }
 
@@ -142,7 +142,7 @@ namespace DraftingSuite
             RunSelectionUtility(
                 "Flatten Annotation",
                 "\nSelect drafting annotation to flatten: ",
-                (db, tr, ids, result, settings) => FlattenObjects(tr, ids, result, CreateStandaloneUtilitySettings()),
+                (db, tr, ids, result, settings) => FlattenObjects(tr, ids, result, CreateStandaloneUtilitySettings(), true),
                 (ed, result) =>
                 {
                     ed.WriteMessage("\n  Objects flattened: {0}", result.AnnotationObjectsFlattened + result.BlocksFlattened);
@@ -342,12 +342,12 @@ namespace DraftingSuite
                 DeleteTinyText(tr, annotationIds, result, settings);
 
                 if (settings.ConvertTextToMleaders)
-                    ConvertTextToMleaders(db, tr, annotationIds, result, settings, true, false);
+                    ConvertTextToMleaders(db, tr, annotationIds, result, settings, true, false, false);
 
                 if (settings.FlattenAnnotation)
                 {
                     List<ObjectId> flattenIds = CollectFlattenIds(candidateIds, createdIds, db, tr, settings);
-                    FlattenObjects(tr, flattenIds, result, settings);
+                    FlattenObjects(tr, flattenIds, result, settings, false);
                 }
 
                 if (settings.RestyleCogoPoints)
@@ -595,7 +595,7 @@ namespace DraftingSuite
             }
         }
 
-        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings, bool applyLayerRules, bool useStyleBasedLanding)
+        private static void ConvertTextToMleaders(Database db, Transaction tr, List<ObjectId> annotationIds, FbkPrepResult result, DraftingSuiteSettings settings, bool applyLayerRules, bool useStyleBasedLanding, bool useNativeMLeaderStyle)
         {
             BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
             BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -623,7 +623,7 @@ namespace DraftingSuite
                 try
                 {
                     entity.UpgradeOpen();
-                    MLeader leader = CreateMLeader(db, tr, text, settings, result, useStyleBasedLanding);
+                    MLeader leader = CreateMLeader(db, tr, text, settings, result, useStyleBasedLanding, useNativeMLeaderStyle);
                     ObjectId leaderId = modelSpace.AppendEntity(leader);
                     tr.AddNewlyCreatedDBObject(leader, true);
                     entity.Erase();
@@ -726,7 +726,7 @@ namespace DraftingSuite
             }
         }
 
-        private static MLeader CreateMLeader(Database db, Transaction tr, TextInfo text, DraftingSuiteSettings settings, FbkPrepResult result, bool useStyleBasedLanding)
+        private static MLeader CreateMLeader(Database db, Transaction tr, TextInfo text, DraftingSuiteSettings settings, FbkPrepResult result, bool useStyleBasedLanding, bool useNativeMLeaderStyle)
         {
             Point3d arrowPoint = ToTargetZ(text.Position, settings.FlattenElevation);
             Vector3d landingOffset = GetMLeaderLandingOffset(db, tr, text, settings, useStyleBasedLanding);
@@ -742,8 +742,11 @@ namespace DraftingSuite
             MLeader leader = new MLeader();
             leader.SetDatabaseDefaults(db);
             ObjectId styleId = GetCurrentMLeaderStyleId(db);
-            TrySetObjectIdProperty(leader, styleId, "MLeaderStyle", "MLeaderStyleId");
-            CopyMLeaderStyleProperties(tr, leader, styleId);
+            if (useNativeMLeaderStyle)
+            {
+                TrySetObjectIdProperty(leader, styleId, "MLeaderStyle", "MLeaderStyleId");
+                CopyMLeaderStyleProperties(tr, leader, styleId);
+            }
             leader.Layer = text.Layer;
             leader.ContentType = ContentType.MTextContent;
             int leaderIndex = leader.AddLeader();
@@ -753,8 +756,11 @@ namespace DraftingSuite
             leader.MText = mText;
             TrySetPoint3dProperty(leader, textPoint, "TextLocation");
             TrySetStringProperty(leader, "TextString", text.Contents);
-            TrySetDoglegDirection(leader, lineIndex, textPoint.X < arrowPoint.X ? new Vector3d(-1.0, 0.0, 0.0) : new Vector3d(1.0, 0.0, 0.0));
-            CopyMLeaderStyleProperties(tr, leader, styleId);
+            if (useNativeMLeaderStyle)
+            {
+                TrySetDoglegDirection(leader, lineIndex, textPoint.X < arrowPoint.X ? new Vector3d(-1.0, 0.0, 0.0) : new Vector3d(1.0, 0.0, 0.0));
+                CopyMLeaderStyleProperties(tr, leader, styleId);
+            }
             TryInvokeParameterless(leader, "EvaluateLeader");
             ApplyByLayerProperties(leader, result);
             return leader;
@@ -994,7 +1000,7 @@ namespace DraftingSuite
             }
         }
 
-        private static void FlattenObjects(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result, DraftingSuiteSettings settings)
+        private static void FlattenObjects(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result, DraftingSuiteSettings settings, bool broadFlatten)
         {
             foreach (ObjectId id in ids)
             {
@@ -1010,7 +1016,7 @@ namespace DraftingSuite
                         continue;
                     }
 
-                    if (FlattenEntity(tr, entity, settings.FlattenElevation))
+                    if (FlattenEntity(tr, entity, settings.FlattenElevation, broadFlatten))
                     {
                         if (entity is BlockReference)
                             result.BlocksFlattened++;
@@ -1065,8 +1071,11 @@ namespace DraftingSuite
             }
         }
 
-        private static bool FlattenEntity(Transaction tr, Entity entity, double targetElevation)
+        private static bool FlattenEntity(Transaction tr, Entity entity, double targetElevation, bool broadFlatten)
         {
+            if (!broadFlatten && !IsDraftingAnnotation(entity))
+                return false;
+
             entity.UpgradeOpen();
             if (entity is BlockReference block)
             {
