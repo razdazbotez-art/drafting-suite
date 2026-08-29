@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.42";
+        private const string Version = "0.1.44";
 
         internal static string VersionText => Version;
 
@@ -109,13 +109,148 @@ namespace DraftingSuite
             DraftingSuiteSettingsForm.ShowSettingsDialog();
         }
 
+        [CommandMethod("DSMT2ML", CommandFlags.Modal)]
+        public void ConvertSelectedTextToMleaders()
+        {
+            RunSelectionUtility(
+                "Text to MLeader",
+                "\nSelect text or mtext to convert to mleaders: ",
+                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, settings),
+                (ed, result) => ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders));
+        }
+
+        [CommandMethod("DSDELETETINY", CommandFlags.Modal)]
+        public void DeleteSelectedTinyText()
+        {
+            RunSelectionUtility(
+                "Delete Tiny Text",
+                "\nSelect text or mtext to check for tiny text deletion: ",
+                (db, tr, ids, result, settings) => DeleteTinyText(tr, ids, result, settings),
+                (ed, result) => ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted));
+        }
+
+        [CommandMethod("DSFLATTEN", CommandFlags.Modal)]
+        public void FlattenSelectedAnnotation()
+        {
+            RunSelectionUtility(
+                "Flatten Annotation",
+                "\nSelect drafting annotation to flatten: ",
+                (db, tr, ids, result, settings) => FlattenObjects(tr, ids, result, settings),
+                (ed, result) =>
+                {
+                    ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
+                    ed.WriteMessage("\n  Blocks skipped by flatten rule: {0}", result.BlocksSkippedByFlattenRule);
+                });
+        }
+
+        [CommandMethod("DSBYLAYER", CommandFlags.Modal)]
+        public void SetSelectedObjectsByLayer()
+        {
+            RunSelectionUtility(
+                "ByLayer Cleanup",
+                "\nSelect objects to set to ByLayer: ",
+                (db, tr, ids, result, settings) => ApplyByLayerToEntities(tr, ids, result),
+                (ed, result) => ed.WriteMessage("\n  Objects set to ByLayer: {0}", result.ObjectsSetByLayer));
+        }
+
+        [CommandMethod("DSLINE3D", CommandFlags.Modal)]
+        public void ConvertSelectedLinesTo3dPolylines()
+        {
+            RunSelectionUtility(
+                "Lines to 3D Polylines",
+                "\nSelect lines to convert to 3D polylines: ",
+                (db, tr, ids, result, settings) => ConvertLinesTo3dPolylines(tr, ids, result, settings),
+                (ed, result) =>
+                {
+                    ed.WriteMessage("\n  COGO-layer lines deleted: {0}", result.CogoLayerLinesDeleted);
+                    ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
+                });
+        }
+
+        [CommandMethod("DSCOGOSTD", CommandFlags.Modal)]
+        public void SetSelectedCogoPointsStandard()
+        {
+            RunSelectionUtility(
+                "COGO Standard",
+                "\nSelect COGO points to restyle: ",
+                (db, tr, ids, result, settings) =>
+                {
+                    List<ObjectId> cogoIds = ids
+                        .Where(id => IsCogoPoint(GetDBObjectOrNull(tr, id)))
+                        .ToList();
+                    result.CogoPointsFound = cogoIds.Count;
+                    RestyleCogoPoints(tr, cogoIds, result, settings);
+                },
+                (ed, result) =>
+                {
+                    ed.WriteMessage("\n  COGO points found: {0}", result.CogoPointsFound);
+                    ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
+                    if (result.CogoPointStyleSkipped > 0)
+                        ed.WriteMessage("\n  COGO style changes skipped: {0}", result.CogoPointStyleSkipped);
+                });
+        }
+
         internal static void PrintLoadMessage(Editor ed)
         {
             if (ed == null)
                 return;
 
-            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, DSFBKPREP, DSSETTINGS, DSVERSION.", Version);
+            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, DSFBKPREP, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
             ed.WriteMessage("\n");
+        }
+
+        private static void RunSelectionUtility(
+            string actionName,
+            string selectionMessage,
+            Action<Database, Transaction, List<ObjectId>, FbkPrepResult, DraftingSuiteSettings> action,
+            Action<Editor, FbkPrepResult> writeSummary)
+        {
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Editor ed = doc?.Editor;
+            if (doc == null || ed == null)
+                return;
+
+            try
+            {
+                List<ObjectId> ids = PromptSelection(ed, selectionMessage);
+                if (ids.Count == 0)
+                {
+                    ed.WriteMessage("\n{0} canceled or no objects selected.", actionName);
+                    ed.WriteMessage("\n");
+                    return;
+                }
+
+                DraftingSuiteSettings settings = DraftingSuiteSettings.Load();
+                FbkPrepResult result = new FbkPrepResult();
+                using (doc.LockDocument())
+                using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    action(doc.Database, tr, ids, result, settings);
+                    tr.Commit();
+                }
+
+                ed.WriteMessage("\n{0} complete.", actionName);
+                writeSummary(ed, result);
+                WriteWarnings(ed, result);
+                ed.WriteMessage("\n");
+            }
+            catch (System.Exception ex)
+            {
+                ed.WriteMessage("\n{0} failed: {1}", actionName, ex.Message);
+                ed.WriteMessage("\n");
+            }
+        }
+
+        private static void WriteWarnings(Editor ed, FbkPrepResult result)
+        {
+            if (result.Errors.Count == 0)
+                return;
+
+            ed.WriteMessage("\n  Warnings:");
+            foreach (string error in result.Errors.Take(8))
+                ed.WriteMessage("\n    {0}", error);
+            if (result.Errors.Count > 8)
+                ed.WriteMessage("\n    {0} more warning(s).", result.Errors.Count - 8);
         }
 
         private static FbkPrepScope PromptScope(Editor ed)
@@ -206,6 +341,19 @@ namespace DraftingSuite
             PromptSelectionResult result = ed.GetSelection(new PromptSelectionOptions
             {
                 MessageForAdding = "\nSelect COGO points and annotation to prep: "
+            });
+
+            if (result.Status != PromptStatus.OK)
+                return new List<ObjectId>();
+
+            return result.Value.GetObjectIds().ToList();
+        }
+
+        private static List<ObjectId> PromptSelection(Editor ed, string message)
+        {
+            PromptSelectionResult result = ed.GetSelection(new PromptSelectionOptions
+            {
+                MessageForAdding = message
             });
 
             if (result.Status != PromptStatus.OK)
@@ -637,6 +785,18 @@ namespace DraftingSuite
             catch (System.Exception ex)
             {
                 result.Errors.Add("ByLayer cleanup skipped " + entity.ObjectId.Handle + ": " + ex.Message);
+            }
+        }
+
+        private static void ApplyByLayerToEntities(Transaction tr, IEnumerable<ObjectId> ids, FbkPrepResult result)
+        {
+            foreach (ObjectId id in ids.ToList())
+            {
+                Entity entity = GetEntityOrNull(tr, id);
+                if (entity == null || entity.IsErased)
+                    continue;
+
+                ApplyByLayerPropertiesForExistingEntity(entity, result);
             }
         }
 
