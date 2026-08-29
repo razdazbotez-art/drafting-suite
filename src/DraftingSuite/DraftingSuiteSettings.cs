@@ -389,7 +389,7 @@ namespace DraftingSuite
                 new CommandPadButtonSetting("FBK Prep", "DSFBKPREP", "Prepare the opened FBK drawing using the active FBK Prep preset.", true),
                 new CommandPadButtonSetting("FBK Prep Config", "DSFBKCONFIG", "Open FBK Prep configuration and presets.", true),
                 new CommandPadButtonSetting("MT2ML", "DSMT2ML", "Convert selected text or mtext to mleaders using the configured leader offset.", true),
-                new CommandPadButtonSetting("Tiny", "DSDELETETINY", "Delete selected text or mtext below the configured tiny text height.", true),
+                new CommandPadButtonSetting("Delete Small Text", "DSDELETETINY", "Delete selected text or mtext below the configured small text height.", true),
                 new CommandPadButtonSetting("Flat", "DSFLATTEN", "Flatten selected drafting annotation to the configured elevation.", true),
                 new CommandPadButtonSetting("ByLayer", "DSBYLAYER", "Set selected objects to ByLayer color, linetype, and lineweight.", true),
                 new CommandPadButtonSetting("3DPoly", "DSLINE3D", "Convert selected lines to 3D polylines and delete COGO-layer lines.", true),
@@ -406,9 +406,9 @@ namespace DraftingSuite
             return source
                 .Where(button => button != null)
                 .Select(button => new CommandPadButtonSetting(
-                    string.IsNullOrWhiteSpace(button.Label) ? button.Command : button.Label.Trim(),
+                    NormalizePadLabel(button.Label, button.Command),
                     NormalizeCommandName(button.Command),
-                    button.Description ?? string.Empty,
+                    NormalizePadDescription(button.Description, button.Command),
                     button.Visible))
                 .Where(button => !string.IsNullOrWhiteSpace(button.Command))
                 .ToList();
@@ -417,6 +417,32 @@ namespace DraftingSuite
         internal static string NormalizeCommandName(string command)
         {
             return (command ?? string.Empty).Trim().TrimStart('_', '.').Trim();
+        }
+
+        private static string NormalizePadLabel(string label, string command)
+        {
+            string cleanLabel = (label ?? string.Empty).Trim();
+            string cleanCommand = NormalizeCommandName(command);
+            if (string.Equals(cleanCommand, "DSDELETETINY", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "Tiny", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Delete Small Text";
+            }
+
+            return string.IsNullOrWhiteSpace(cleanLabel) ? cleanCommand : cleanLabel;
+        }
+
+        private static string NormalizePadDescription(string description, string command)
+        {
+            string cleanCommand = NormalizeCommandName(command);
+            if (string.Equals(cleanCommand, "DSDELETETINY", StringComparison.OrdinalIgnoreCase) &&
+                ((description ?? string.Empty).IndexOf("tiny text", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 string.IsNullOrWhiteSpace(description)))
+            {
+                return "Delete selected text or mtext below the configured small text height.";
+            }
+
+            return description ?? string.Empty;
         }
     }
 

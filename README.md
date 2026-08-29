@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.45`
+Current version: `0.1.46`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -12,7 +12,7 @@ New installs start with the built-in `Typical` preset.
 - `DSFBKPREP` prepares an opened fieldbook drawing for drafting.
 - `DSFBKCONFIG` opens the modeless FBK Prep Config window.
 - `DSMT2ML` converts selected text or mtext to mleaders.
-- `DSDELETETINY` deletes selected text or mtext below the configured tiny text height.
+- `DSDELETETINY` deletes selected text or mtext below the configured small text height.
 - `DSFLATTEN` flattens selected drafting annotation to the configured elevation.
 - `DSBYLAYER` sets selected objects to ByLayer color, linetype, and lineweight.
 - `DSLINE3D` converts selected lines to 3D polylines and deletes lines on configured COGO point layers.
@@ -32,9 +32,9 @@ New installs start with the built-in `Typical` preset.
 6. Preserve generated block output instead of deleting it by layer rule.
 7. Delete original or generated regular AutoCAD line entities when their layer matches the configured COGO point layer list.
 8. Convert remaining regular AutoCAD line entities to two-vertex 3D polylines.
-9. Delete extracted text and eligible original text below the configured tiny text height. Text at exactly the configured height is kept.
+9. Delete extracted text and eligible original text below the configured small text height. Text at exactly the configured height is kept.
 10. Delete extracted text and eligible original text when its layer matches a configured delete text layer wildcard.
-11. Leave extracted text and eligible original text as-is when its layer matches a configured keep-as-text layer wildcard. When inverse keep-as-text mode is enabled, non-matching layers are kept as text and matching layers are forced to convert to MLeaders. Tiny text below the configured height is still deleted first.
+11. Leave extracted text and eligible original text as-is when its layer matches a configured keep-as-text layer wildcard. When inverse keep-as-text mode is enabled, non-matching layers are kept as text and matching layers are forced to convert to MLeaders. Small text below the configured height is still deleted first.
 12. Convert remaining text and mtext annotation to mleaders with the arrowhead at the original text insertion point and the mleader text placed `15` drawing units northeast.
 13. Flatten drafting annotation to elevation `0`, except block names matching the configured do-not-flatten wildcard list.
 14. Set surviving created, converted, flattened, or kept annotation objects to ByLayer for color, linetype, and lineweight.

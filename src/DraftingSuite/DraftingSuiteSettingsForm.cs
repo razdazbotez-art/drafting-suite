@@ -192,12 +192,12 @@ namespace DraftingSuite
 
             TableLayoutPanel text = CreateFieldsTable();
             convertTextCheck = AddCheck(text, "Convert text to mleaders");
-            tinyTextBox = AddText(text, "Tiny text max height");
+            tinyTextBox = AddText(text, "Text Max Height");
             AddHelpText(text, "Deletes DBText or MText whose text height is below this value before mleader conversion. Text at exactly this height is kept.");
             mleaderDeleteLayersBox = AddMultiline(text, "Delete text layers");
             mleaderKeepTextLayersBox = AddMultiline(text, "Keep as text layers");
             invertKeepTextLayersCheck = AddCheck(text, "Invert keep-as-text list");
-            AddHelpText(text, "When off, matching layers are kept as text. When on, non-matching layers are kept as text and matching layers are forced to convert to mleaders. Tiny text below the max height is still deleted first.");
+            AddHelpText(text, "When off, matching layers are kept as text. When on, non-matching layers are kept as text and matching layers are forced to convert to mleaders. Small text below the max height is still deleted first.");
             offsetXBox = AddText(text, "MLeader offset X");
             offsetYBox = AddText(text, "MLeader offset Y");
             tabs.TabPages.Add(CreateTabPage("Text && MLeaders", text));
@@ -468,7 +468,7 @@ namespace DraftingSuite
             if (!TryReadDouble(offsetXBox, "MLeader offset X", out double offsetX) ||
                 !TryReadDouble(offsetYBox, "MLeader offset Y", out double offsetY) ||
                 !TryReadDouble(flattenElevationBox, "Flatten elevation", out double flattenElevation) ||
-                !TryReadDouble(tinyTextBox, "Tiny text max height", out double tinyTextHeight))
+                !TryReadDouble(tinyTextBox, "Text Max Height", out double tinyTextHeight))
             {
                 return null;
             }

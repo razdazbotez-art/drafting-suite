@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.45";
+        private const string Version = "0.1.46";
 
         internal static string VersionText => Version;
 
@@ -68,13 +68,14 @@ namespace DraftingSuite
                     ed.WriteMessage("\n  Anonymous blocks burst: {0}", result.AnonymousBlocksBurst);
                     ed.WriteMessage("\n  COGO-layer lines deleted: {0}", result.CogoLayerLinesDeleted);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
-                    ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted);
+                    ed.WriteMessage("\n  Small text deleted: {0}", result.TinyTextDeleted);
                     ed.WriteMessage("\n  Text/MText deleted by layer: {0}", result.TextDeletedByLayer);
                     ed.WriteMessage("\n  Text/MText kept by layer: {0}", result.TextKeptByLayer);
                     ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders);
-                    ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
-                    ed.WriteMessage("\n  Objects set to ByLayer: {0}", result.ObjectsSetByLayer);
+                    ed.WriteMessage("\n  Annotation objects flattened: {0}", result.AnnotationObjectsFlattened);
+                    ed.WriteMessage("\n  Blocks flattened: {0}", result.BlocksFlattened);
                     ed.WriteMessage("\n  Blocks skipped by flatten rule: {0}", result.BlocksSkippedByFlattenRule);
+                    ed.WriteMessage("\n  Objects set to ByLayer: {0}", result.ObjectsSetByLayer);
                     ed.WriteMessage("\n  COGO points restyled: {0}", result.CogoPointsRestyled);
                     if (result.CogoPointStyleSkipped > 0)
                         ed.WriteMessage("\n  COGO style changes skipped: {0}", result.CogoPointStyleSkipped);
@@ -129,10 +130,10 @@ namespace DraftingSuite
         public void DeleteSelectedTinyText()
         {
             RunSelectionUtility(
-                "Delete Tiny Text",
-                "\nSelect text or mtext to check for tiny text deletion: ",
+                "Delete Small Text",
+                "\nSelect text or mtext to check for small text deletion: ",
                 (db, tr, ids, result, settings) => DeleteTinyText(tr, ids, result, settings),
-                (ed, result) => ed.WriteMessage("\n  Tiny text deleted: {0}", result.TinyTextDeleted));
+                (ed, result) => ed.WriteMessage("\n  Small text deleted: {0}", result.TinyTextDeleted));
         }
 
         [CommandMethod("DSFLATTEN", CommandFlags.Modal)]
@@ -144,7 +145,8 @@ namespace DraftingSuite
                 (db, tr, ids, result, settings) => FlattenObjects(tr, ids, result, settings),
                 (ed, result) =>
                 {
-                    ed.WriteMessage("\n  Annotation objects flattened: {0}", result.ObjectsFlattened);
+                    ed.WriteMessage("\n  Annotation objects flattened: {0}", result.AnnotationObjectsFlattened);
+                    ed.WriteMessage("\n  Blocks flattened: {0}", result.BlocksFlattened);
                     ed.WriteMessage("\n  Blocks skipped by flatten rule: {0}", result.BlocksSkippedByFlattenRule);
                 });
         }
@@ -704,7 +706,7 @@ namespace DraftingSuite
                 }
                 catch (System.Exception ex)
                 {
-                    result.Errors.Add("Tiny text delete skipped " + id.Handle + ": " + ex.Message);
+                    result.Errors.Add("Small text delete skipped " + id.Handle + ": " + ex.Message);
                 }
             }
         }
@@ -987,7 +989,10 @@ namespace DraftingSuite
 
                     if (FlattenEntity(entity, settings.FlattenElevation))
                     {
-                        result.ObjectsFlattened++;
+                        if (entity is BlockReference)
+                            result.BlocksFlattened++;
+                        else
+                            result.AnnotationObjectsFlattened++;
                         ApplyByLayerProperties(entity, result);
                     }
                 }
@@ -1701,7 +1706,8 @@ namespace DraftingSuite
             public int TextDeletedByLayer { get; set; }
             public int TextKeptByLayer { get; set; }
             public int TextConvertedToMleaders { get; set; }
-            public int ObjectsFlattened { get; set; }
+            public int AnnotationObjectsFlattened { get; set; }
+            public int BlocksFlattened { get; set; }
             public int ObjectsSetByLayer { get; set; }
             public int BlocksSkippedByFlattenRule { get; set; }
             public int CogoPointsRestyled { get; set; }
