@@ -192,7 +192,7 @@ namespace DraftingSuite
 
             TableLayoutPanel text = CreateFieldsTable();
             convertTextCheck = AddCheck(text, "Convert text to mleaders");
-            tinyTextBox = AddText(text, "Text Max Height");
+            tinyTextBox = AddText(text, "Delete Text Below Height");
             AddHelpText(text, "Deletes DBText or MText whose text height is below this value before mleader conversion. Text at exactly this height is kept.");
             mleaderDeleteLayersBox = AddMultiline(text, "Delete text layers");
             mleaderKeepTextLayersBox = AddMultiline(text, "Keep as text layers");
@@ -468,7 +468,7 @@ namespace DraftingSuite
             if (!TryReadDouble(offsetXBox, "MLeader offset X", out double offsetX) ||
                 !TryReadDouble(offsetYBox, "MLeader offset Y", out double offsetY) ||
                 !TryReadDouble(flattenElevationBox, "Flatten elevation", out double flattenElevation) ||
-                !TryReadDouble(tinyTextBox, "Text Max Height", out double tinyTextHeight))
+                !TryReadDouble(tinyTextBox, "Delete Text Below Height", out double tinyTextHeight))
             {
                 return null;
             }
