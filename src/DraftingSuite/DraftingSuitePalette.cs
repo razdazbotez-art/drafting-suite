@@ -29,7 +29,7 @@ namespace DraftingSuite
 
         internal static void RefreshPad()
         {
-            foreach (DraftingSuitePaletteControl control in padControls.ToList())
+            foreach (DraftingSuitePaletteControl control in new List<DraftingSuitePaletteControl>(padControls))
                 control.RefreshPadButtons();
         }
 

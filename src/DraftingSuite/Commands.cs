@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.50";
+        private const string Version = "0.1.51";
 
         internal static string VersionText => Version;
 
