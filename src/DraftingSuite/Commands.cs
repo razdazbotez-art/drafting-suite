@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.53";
+        private const string Version = "0.1.54";
 
         internal static string VersionText => Version;
 
@@ -145,9 +145,7 @@ namespace DraftingSuite
                 (db, tr, ids, result, settings) => FlattenObjects(tr, ids, result, CreateStandaloneUtilitySettings()),
                 (ed, result) =>
                 {
-                    ed.WriteMessage("\n  Annotation objects flattened: {0}", result.AnnotationObjectsFlattened);
-                    ed.WriteMessage("\n  Blocks flattened: {0}", result.BlocksFlattened);
-                    ed.WriteMessage("\n  Blocks skipped by flatten rule: {0}", result.BlocksSkippedByFlattenRule);
+                    ed.WriteMessage("\n  Objects flattened: {0}", result.AnnotationObjectsFlattened + result.BlocksFlattened);
                 });
         }
 
@@ -743,7 +741,9 @@ namespace DraftingSuite
 
             MLeader leader = new MLeader();
             leader.SetDatabaseDefaults(db);
-            TrySetObjectIdProperty(leader, GetCurrentMLeaderStyleId(db), "MLeaderStyle", "MLeaderStyleId");
+            ObjectId styleId = GetCurrentMLeaderStyleId(db);
+            TrySetObjectIdProperty(leader, styleId, "MLeaderStyle", "MLeaderStyleId");
+            CopyMLeaderStyleProperties(tr, leader, styleId);
             leader.Layer = text.Layer;
             leader.ContentType = ContentType.MTextContent;
             int leaderIndex = leader.AddLeader();
@@ -754,6 +754,7 @@ namespace DraftingSuite
             TrySetPoint3dProperty(leader, textPoint, "TextLocation");
             TrySetStringProperty(leader, "TextString", text.Contents);
             TrySetDoglegDirection(leader, lineIndex, textPoint.X < arrowPoint.X ? new Vector3d(-1.0, 0.0, 0.0) : new Vector3d(1.0, 0.0, 0.0));
+            CopyMLeaderStyleProperties(tr, leader, styleId);
             TryInvokeParameterless(leader, "EvaluateLeader");
             ApplyByLayerProperties(leader, result);
             return leader;
@@ -1183,6 +1184,55 @@ namespace DraftingSuite
             }
         }
 
+        private static void CopyMLeaderStyleProperties(Transaction tr, MLeader leader, ObjectId styleId)
+        {
+            if (tr == null || leader == null || styleId.IsNull)
+                return;
+
+            try
+            {
+                DBObject style = tr.GetObject(styleId, OpenMode.ForRead, false);
+                CopyBooleanProperty(style, leader, "EnableLanding");
+                CopyBooleanProperty(style, leader, "EnableDogleg");
+                CopyBooleanProperty(style, leader, "EnableFrameText");
+                CopyDoubleProperty(style, leader, "DoglegLength", "DoglegLength", "LandingDistance");
+                CopyDoubleProperty(style, leader, "LandingGap", "LandingGap", "TextLandingGap");
+                CopyDoubleProperty(style, leader, "TextHeight", "TextHeight");
+                CopyEnumProperty(style, leader, "TextAlignmentType");
+                CopyEnumProperty(style, leader, "TextAttachmentType");
+            }
+            catch
+            {
+            }
+        }
+
+        private static void CopyBooleanProperty(object source, object target, string propertyName)
+        {
+            object value = GetPropertyValue(source, propertyName);
+            if (value is bool boolValue)
+                TrySetBooleanProperty(target, boolValue, propertyName);
+        }
+
+        private static void CopyDoubleProperty(object source, object target, string sourcePropertyName, params string[] targetPropertyNames)
+        {
+            object value = GetPropertyValue(source, sourcePropertyName);
+            try
+            {
+                if (value != null)
+                    TrySetDoubleProperty(target, Convert.ToDouble(value), targetPropertyNames);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void CopyEnumProperty(object source, object target, string propertyName)
+        {
+            object value = GetPropertyValue(source, propertyName);
+            if (value != null)
+                TrySetPropertyValue(target, propertyName, value);
+        }
+
         private static void FlattenPolyline3d(Transaction tr, Polyline3d polyline, double targetElevation)
         {
             foreach (ObjectId vertexId in polyline)
@@ -1528,7 +1578,11 @@ namespace DraftingSuite
             try
             {
                 PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-                return property == null ? null : property.GetValue(target, null);
+                if (property != null)
+                    return property.GetValue(target, null);
+
+                FieldInfo field = target.GetType().GetField(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                return field == null ? null : field.GetValue(target);
             }
             catch
             {
@@ -1788,6 +1842,95 @@ namespace DraftingSuite
             return false;
         }
 
+        private static bool TrySetBooleanProperty(object target, bool value, params string[] propertyNames)
+        {
+            if (target == null || propertyNames == null)
+                return false;
+
+            foreach (string propertyName in propertyNames)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null && property.CanWrite && property.PropertyType == typeof(bool))
+                    {
+                        property.SetValue(target, value, null);
+                        return true;
+                    }
+
+                    FieldInfo field = target.GetType().GetField(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                    if (field != null && field.FieldType == typeof(bool))
+                    {
+                        field.SetValue(target, value);
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TrySetDoubleProperty(object target, double value, params string[] propertyNames)
+        {
+            if (target == null || propertyNames == null)
+                return false;
+
+            foreach (string propertyName in propertyNames)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null && property.CanWrite && property.PropertyType == typeof(double))
+                    {
+                        property.SetValue(target, value, null);
+                        return true;
+                    }
+
+                    FieldInfo field = target.GetType().GetField(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                    if (field != null && field.FieldType == typeof(double))
+                    {
+                        field.SetValue(target, value);
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TrySetPropertyValue(object target, string propertyName, object value)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(propertyName) || value == null)
+                return false;
+
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (property != null && property.CanWrite && property.PropertyType.IsInstanceOfType(value))
+                {
+                    property.SetValue(target, value, null);
+                    return true;
+                }
+
+                FieldInfo field = target.GetType().GetField(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (field == null || !field.FieldType.IsInstanceOfType(value))
+                    return false;
+
+                field.SetValue(target, value);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool TrySetDoglegDirection(MLeader leader, int leaderIndex, Vector3d direction)
         {
             if (leader == null)
@@ -1795,7 +1938,8 @@ namespace DraftingSuite
 
             try
             {
-                MethodInfo method = leader.GetType().GetMethod("SetDoglegDirection", new[] { typeof(int), typeof(Vector3d) });
+                MethodInfo method = leader.GetType().GetMethod("SetDoglegDirection", new[] { typeof(int), typeof(Vector3d) }) ??
+                                    leader.GetType().GetMethod("SetDogleg", new[] { typeof(int), typeof(Vector3d) });
                 if (method == null)
                     return false;
 
