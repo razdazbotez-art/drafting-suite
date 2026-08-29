@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.51";
+        private const string Version = "0.1.52";
 
         internal static string VersionText => Version;
 
@@ -732,24 +732,28 @@ namespace DraftingSuite
         {
             Point3d arrowPoint = ToTargetZ(text.Position, settings.FlattenElevation);
             Point3d textPoint = new Point3d(arrowPoint.X + settings.MLeaderTextOffsetX, arrowPoint.Y + settings.MLeaderTextOffsetY, settings.FlattenElevation);
-            MText mText = new MText
-            {
-                Contents = text.Contents,
-                TextHeight = text.Height > 0.0 ? text.Height : db.Textsize,
-                Location = textPoint,
-                Rotation = text.Rotation,
-                Attachment = AttachmentPoint.MiddleLeft
-            };
+            MText mText = new MText();
+            mText.SetDatabaseDefaults(db);
+            mText.Contents = text.Contents;
+            mText.TextHeight = text.Height > 0.0 ? text.Height : db.Textsize;
+            mText.Location = textPoint;
+            mText.Rotation = text.Rotation;
+            mText.Attachment = AttachmentPoint.MiddleLeft;
 
             MLeader leader = new MLeader();
             leader.SetDatabaseDefaults(db);
+            TrySetObjectIdProperty(leader, GetCurrentMLeaderStyleId(db), "MLeaderStyle", "MLeaderStyleId");
             leader.Layer = text.Layer;
             leader.ContentType = ContentType.MTextContent;
-            leader.MText = mText;
             int leaderIndex = leader.AddLeader();
             int lineIndex = leader.AddLeaderLine(leaderIndex);
             leader.AddFirstVertex(lineIndex, arrowPoint);
             leader.AddLastVertex(lineIndex, textPoint);
+            leader.MText = mText;
+            TrySetPoint3dProperty(leader, textPoint, "TextLocation");
+            TrySetStringProperty(leader, "TextString", text.Contents);
+            TrySetDoglegDirection(leader, lineIndex, textPoint.X < arrowPoint.X ? new Vector3d(-1.0, 0.0, 0.0) : new Vector3d(1.0, 0.0, 0.0));
+            TryInvokeParameterless(leader, "EvaluateLeader");
             ApplyByLayerProperties(leader, result);
             return leader;
         }
@@ -1061,9 +1065,6 @@ namespace DraftingSuite
 
         private static bool FlattenEntity(Entity entity, double targetElevation)
         {
-            if (!IsDraftingAnnotation(entity))
-                return false;
-
             entity.UpgradeOpen();
             if (entity is BlockReference block)
             {
@@ -1095,6 +1096,45 @@ namespace DraftingSuite
             if (entity is Dimension dimension)
             {
                 FlattenByExtents(dimension, targetElevation);
+                return true;
+            }
+            if (entity is Line line)
+            {
+                line.StartPoint = ToTargetZ(line.StartPoint, targetElevation);
+                line.EndPoint = ToTargetZ(line.EndPoint, targetElevation);
+                return true;
+            }
+            if (entity is Polyline polyline)
+            {
+                polyline.Elevation = targetElevation;
+                return true;
+            }
+            if (entity is Polyline2d polyline2d)
+            {
+                polyline2d.Elevation = targetElevation;
+                return true;
+            }
+            if (entity is Circle circle)
+            {
+                circle.Center = ToTargetZ(circle.Center, targetElevation);
+                return true;
+            }
+            if (entity is Arc arc)
+            {
+                arc.Center = ToTargetZ(arc.Center, targetElevation);
+                return true;
+            }
+            if (entity is DBPoint point)
+            {
+                point.Position = ToTargetZ(point.Position, targetElevation);
+                return true;
+            }
+            if (entity is Solid solid)
+            {
+                solid.SetPointAt(0, ToTargetZ(solid.GetPointAt(0), targetElevation));
+                solid.SetPointAt(1, ToTargetZ(solid.GetPointAt(1), targetElevation));
+                solid.SetPointAt(2, ToTargetZ(solid.GetPointAt(2), targetElevation));
+                solid.SetPointAt(3, ToTargetZ(solid.GetPointAt(3), targetElevation));
                 return true;
             }
 
@@ -1445,6 +1485,33 @@ namespace DraftingSuite
             return value is ObjectId id ? id : ObjectId.Null;
         }
 
+        private static ObjectId GetObjectIdPropertyValue(object target, params string[] propertyNames)
+        {
+            if (propertyNames == null)
+                return ObjectId.Null;
+
+            foreach (string propertyName in propertyNames)
+            {
+                ObjectId value = GetObjectIdPropertyValue(target, propertyName);
+                if (!value.IsNull)
+                    return value;
+            }
+
+            return ObjectId.Null;
+        }
+
+        private static ObjectId GetCurrentMLeaderStyleId(Database db)
+        {
+            return GetObjectIdPropertyValue(
+                db,
+                "Cmlstyle",
+                "CMLeaderStyle",
+                "CurrentMLeaderStyle",
+                "CurrentMLeaderStyleId",
+                "MLeaderStyle",
+                "MLeaderStyleId");
+        }
+
         private static bool IsDraftingAnnotation(Entity entity)
         {
             if (entity == null || IsCogoPoint(entity))
@@ -1625,12 +1692,83 @@ namespace DraftingSuite
             if (target == null)
                 return false;
 
-            PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-            if (property == null || !property.CanWrite || property.PropertyType != typeof(string))
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite || property.PropertyType != typeof(string))
+                    return false;
+
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TrySetPoint3dProperty(object target, Point3d value, params string[] propertyNames)
+        {
+            if (target == null || propertyNames == null)
                 return false;
 
-            property.SetValue(target, value, null);
-            return true;
+            foreach (string propertyName in propertyNames)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null || !property.CanWrite || property.PropertyType != typeof(Point3d))
+                        continue;
+
+                    property.SetValue(target, value, null);
+                    return true;
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TrySetDoglegDirection(MLeader leader, int leaderIndex, Vector3d direction)
+        {
+            if (leader == null)
+                return false;
+
+            try
+            {
+                MethodInfo method = leader.GetType().GetMethod("SetDoglegDirection", new[] { typeof(int), typeof(Vector3d) });
+                if (method == null)
+                    return false;
+
+                method.Invoke(leader, new object[] { leaderIndex, direction });
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryInvokeParameterless(object target, string methodName)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(methodName))
+                return false;
+
+            try
+            {
+                MethodInfo method = target.GetType().GetMethod(methodName, Type.EmptyTypes);
+                if (method == null)
+                    return false;
+
+                method.Invoke(target, null);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool TrySetObjectIdProperty(object target, ObjectId value, params string[] propertyNames)
