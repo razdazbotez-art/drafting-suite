@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.49`
+Current version: `0.1.50`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -11,12 +11,12 @@ New installs start with the built-in `Typical` preset.
 - `DS` opens the tabbed Drafting Suite palette. The default Pad tab is a compact command pad; shared version and command information lives on the Help tab.
 - `DSFBKPREP` prepares an opened fieldbook drawing for drafting.
 - `DSFBKCONFIG` opens the modeless FBK Prep Config window.
-- `DSMT2ML` converts selected text or mtext to mleaders.
+- `DSMT2ML` converts selected text or mtext to mleaders using standalone utility defaults.
 - `DSDELETETINY` deletes selected text or mtext below the configured small text height.
-- `DSFLATTEN` flattens selected drafting annotation to the configured elevation.
+- `DSFLATTEN` flattens selected drafting annotation to elevation `0`.
 - `DSBYLAYER` sets selected objects to ByLayer color, linetype, and lineweight.
-- `DSLINE3D` converts selected lines to 3D polylines and deletes lines on configured COGO point layers.
-- `DSCOGOSTD` sets selected COGO points to the configured point and label styles.
+- `DSLINE3D` converts selected lines to 3D polylines.
+- `DSCOGOSTD` sets selected COGO points to `Standard` point and label styles.
 - `DSSETTINGS` opens the modeless FBK Prep Config window.
 - `DSVERSION` prints the loaded Drafting Suite version.
 

@@ -25,7 +25,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.49";
+        private const string Version = "0.1.50";
 
         internal static string VersionText => Version;
 
@@ -122,7 +122,7 @@ namespace DraftingSuite
             RunSelectionUtility(
                 "Text to MLeader",
                 "\nSelect text or mtext to convert to mleaders: ",
-                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, settings, false),
+                (db, tr, ids, result, settings) => ConvertTextToMleaders(db, tr, ids, result, CreateStandaloneUtilitySettings(), false),
                 (ed, result) => ed.WriteMessage("\n  Text/MText converted to MLeaders: {0}", result.TextConvertedToMleaders));
         }
 
@@ -142,7 +142,7 @@ namespace DraftingSuite
             RunSelectionUtility(
                 "Flatten Annotation",
                 "\nSelect drafting annotation to flatten: ",
-                (db, tr, ids, result, settings) => FlattenObjects(tr, ids, result, settings),
+                (db, tr, ids, result, settings) => FlattenObjects(tr, ids, result, CreateStandaloneUtilitySettings()),
                 (ed, result) =>
                 {
                     ed.WriteMessage("\n  Annotation objects flattened: {0}", result.AnnotationObjectsFlattened);
@@ -167,10 +167,9 @@ namespace DraftingSuite
             RunSelectionUtility(
                 "Lines to 3D Polylines",
                 "\nSelect lines to convert to 3D polylines: ",
-                (db, tr, ids, result, settings) => ConvertLinesTo3dPolylines(tr, ids, result, settings),
+                (db, tr, ids, result, settings) => ConvertLinesTo3dPolylines(tr, ids, result, CreateStandaloneUtilitySettings()),
                 (ed, result) =>
                 {
-                    ed.WriteMessage("\n  COGO-layer lines deleted: {0}", result.CogoLayerLinesDeleted);
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                 });
         }
@@ -187,7 +186,7 @@ namespace DraftingSuite
                         .Where(id => IsCogoPoint(GetDBObjectOrNull(tr, id)))
                         .ToList();
                     result.CogoPointsFound = cogoIds.Count;
-                    RestyleCogoPoints(tr, cogoIds, result, settings);
+                    RestyleCogoPoints(tr, cogoIds, result, CreateStandaloneUtilitySettings());
                 },
                 (ed, result) =>
                 {
@@ -205,6 +204,24 @@ namespace DraftingSuite
 
             ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
             ed.WriteMessage("\n");
+        }
+
+        private static DraftingSuiteSettings CreateStandaloneUtilitySettings()
+        {
+            DraftingSuiteSettings settings = DraftingSuiteSettings.CreateDefault();
+            settings.PresetName = string.Empty;
+            settings.MLeaderTextOffsetX = 15.0;
+            settings.MLeaderTextOffsetY = 15.0;
+            settings.FlattenElevation = 0.0;
+            settings.CogoPointStyleName = "Standard";
+            settings.CogoLabelStyleName = "Standard";
+            settings.ProtectedSourceLayerPatterns = new List<string>();
+            settings.MLeaderIgnoreLayerPatterns = new List<string>();
+            settings.MLeaderDeleteLayerPatterns = new List<string>();
+            settings.MLeaderKeepTextLayerPatterns = new List<string>();
+            settings.FlattenSkipBlockNamePatterns = new List<string>();
+            settings.InvertKeepTextLayerPatterns = false;
+            return settings;
         }
 
         private static void RunSelectionUtility(

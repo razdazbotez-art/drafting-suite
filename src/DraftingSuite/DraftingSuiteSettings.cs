@@ -388,12 +388,12 @@ namespace DraftingSuite
             {
                 new CommandPadButtonSetting("FBK Prep", "DSFBKPREP", "Prepare the opened FBK drawing using the active FBK Prep preset.", true),
                 new CommandPadButtonSetting("FBK Prep Config", "DSFBKCONFIG", "Open FBK Prep configuration and presets.", true),
-                new CommandPadButtonSetting("MT2ML", "DSMT2ML", "Convert selected text or mtext to mleaders using the configured leader offset.", true),
+                new CommandPadButtonSetting("Text to MLeader", "DSMT2ML", "Convert selected text or mtext to mleaders with the leader landing 15 drawing units northeast of the original text.", true),
                 new CommandPadButtonSetting("Delete Small Text", "DSDELETETINY", "Delete selected text or mtext below the configured small text height.", true),
-                new CommandPadButtonSetting("Flat", "DSFLATTEN", "Flatten selected drafting annotation to the configured elevation.", true),
-                new CommandPadButtonSetting("ByLayer", "DSBYLAYER", "Set selected objects to ByLayer color, linetype, and lineweight.", true),
-                new CommandPadButtonSetting("3DPoly", "DSLINE3D", "Convert selected lines to 3D polylines and delete COGO-layer lines.", true),
-                new CommandPadButtonSetting("COGO", "DSCOGOSTD", "Set selected COGO points to the configured point and label styles.", true)
+                new CommandPadButtonSetting("Flatten to 0", "DSFLATTEN", "Move selected drafting annotation to elevation 0.", true),
+                new CommandPadButtonSetting("Set ByLayer", "DSBYLAYER", "Set selected objects to ByLayer color, linetype, and lineweight.", true),
+                new CommandPadButtonSetting("Lines to 3D Poly", "DSLINE3D", "Convert selected regular lines to 3D polylines.", true),
+                new CommandPadButtonSetting("COGO to Standard", "DSCOGOSTD", "Set selected COGO points to Standard point and label styles.", true)
             };
         }
 
@@ -429,6 +429,36 @@ namespace DraftingSuite
                 return "Delete Small Text";
             }
 
+            if (string.Equals(cleanCommand, "DSMT2ML", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "MT2ML", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Text to MLeader";
+            }
+
+            if (string.Equals(cleanCommand, "DSFLATTEN", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "Flat", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Flatten to 0";
+            }
+
+            if (string.Equals(cleanCommand, "DSBYLAYER", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "ByLayer", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Set ByLayer";
+            }
+
+            if (string.Equals(cleanCommand, "DSLINE3D", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "3DPoly", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Lines to 3D Poly";
+            }
+
+            if (string.Equals(cleanCommand, "DSCOGOSTD", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "COGO", StringComparison.OrdinalIgnoreCase))
+            {
+                return "COGO to Standard";
+            }
+
             return string.IsNullOrWhiteSpace(cleanLabel) ? cleanCommand : cleanLabel;
         }
 
@@ -440,6 +470,34 @@ namespace DraftingSuite
                  string.IsNullOrWhiteSpace(description)))
             {
                 return "Delete selected text or mtext below the configured small text height.";
+            }
+
+            if (string.Equals(cleanCommand, "DSMT2ML", StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(description) ||
+                 (description ?? string.Empty).IndexOf("configured leader offset", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return "Convert selected text or mtext to mleaders with the leader landing 15 drawing units northeast of the original text.";
+            }
+
+            if (string.Equals(cleanCommand, "DSFLATTEN", StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(description) ||
+                 (description ?? string.Empty).IndexOf("configured elevation", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return "Move selected drafting annotation to elevation 0.";
+            }
+
+            if (string.Equals(cleanCommand, "DSLINE3D", StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(description) ||
+                 (description ?? string.Empty).IndexOf("COGO-layer lines", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return "Convert selected regular lines to 3D polylines.";
+            }
+
+            if (string.Equals(cleanCommand, "DSCOGOSTD", StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(description) ||
+                 (description ?? string.Empty).IndexOf("configured point and label styles", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return "Set selected COGO points to Standard point and label styles.";
             }
 
             return description ?? string.Empty;
