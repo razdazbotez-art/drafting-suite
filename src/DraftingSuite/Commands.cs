@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.62";
+        private const string Version = "0.1.63";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -1163,13 +1163,14 @@ namespace DraftingSuite
                 BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
                 BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
 
-                double textHeight = db.Textsize > 0.0 ? db.Textsize : 2.5;
+                double baseTextHeight = db.Textsize > 0.0 ? db.Textsize : 2.5;
+                double textHeight = baseTextHeight * 20.0;
                 MText report = new MText
                 {
                     Location = GetCfbkReportLocation(ed),
                     TextHeight = textHeight,
                     Width = textHeight * 140.0,
-                    Attachment = AttachmentPoint.TopLeft,
+                    Attachment = AttachmentPoint.TopRight,
                     Contents = BuildCfbkReportMText(result)
                 };
 
@@ -1185,7 +1186,7 @@ namespace DraftingSuite
             {
                 ViewTableRecord view = ed.GetCurrentView();
                 return new Point3d(
-                    view.CenterPoint.X - (view.Width * 0.45),
+                    view.CenterPoint.X + (view.Width * 0.45),
                     view.CenterPoint.Y + (view.Height * 0.45),
                     0.0);
             }
