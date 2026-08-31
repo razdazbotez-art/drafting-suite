@@ -386,6 +386,7 @@ namespace DraftingSuite
         {
             return new List<CommandPadButtonSetting>
             {
+                new CommandPadButtonSetting("Combine FBKs", "CFBK", "Combine allowed CAD objects from processed FBK drawings in a folder.", true),
                 new CommandPadButtonSetting("FBK Prep", "DSFBKPREP", "Prepare the opened FBK drawing using the active FBK Prep preset.", true),
                 new CommandPadButtonSetting("FBK Prep Config", "DSFBKCONFIG", "Open FBK Prep configuration and presets.", true),
                 new CommandPadButtonSetting("Text to MLeader", "DSMT2ML", "Convert selected text or mtext to mleaders using the current MLeader style with a 15 drawing-unit text offset.", true),

@@ -1,13 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using WinForms = System.Windows.Forms;
 
 namespace DraftingSuite
 {
@@ -25,7 +29,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.56";
+        private const string Version = "0.1.58";
 
         internal static string VersionText => Version;
 
@@ -94,6 +98,88 @@ namespace DraftingSuite
             catch (System.Exception ex)
             {
                 ed.WriteMessage("\nFBK Prep failed: {0}", ex.Message);
+                ed.WriteMessage("\n");
+            }
+        }
+
+        [CommandMethod("CFBK", CommandFlags.Session)]
+        public void CombineFieldbookDrawings()
+        {
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Editor ed = doc?.Editor;
+            if (doc == null || ed == null)
+                return;
+
+            try
+            {
+                string sourceFolder = PromptCfbkSourceFolder(doc);
+                if (string.IsNullOrWhiteSpace(sourceFolder))
+                {
+                    ed.WriteMessage("\nCFBK canceled.");
+                    ed.WriteMessage("\n");
+                    return;
+                }
+
+                string filter = PromptCfbkFilter(ed);
+                if (filter == null)
+                {
+                    ed.WriteMessage("\nCFBK canceled.");
+                    ed.WriteMessage("\n");
+                    return;
+                }
+
+                List<string> sourceDrawings = FindCfbkSourceDrawings(sourceFolder, filter, doc.Database.Filename);
+                if (sourceDrawings.Count == 0)
+                {
+                    ed.WriteMessage("\nCFBK found no drawings matching {0}.", filter);
+                    ed.WriteMessage("\n");
+                    return;
+                }
+
+                if (!ConfirmCfbkRun(sourceFolder, filter, sourceDrawings.Count))
+                {
+                    ed.WriteMessage("\nCFBK canceled.");
+                    ed.WriteMessage("\n");
+                    return;
+                }
+
+                CfbkRunResult result = CreateCfbkRunResult(sourceFolder);
+                using (doc.LockDocument())
+                {
+                    foreach (string sourcePath in sourceDrawings)
+                    {
+                        CfbkImportedDrawing drawing = new CfbkImportedDrawing(sourcePath);
+                        result.Drawings.Add(drawing);
+                        try
+                        {
+                            CloneAllowedModelSpaceFromDrawing(doc.Database, sourcePath, drawing);
+                            ed.WriteMessage(
+                                "\n  Imported {0}: {1} object(s), skipped {2}",
+                                Path.GetFileName(sourcePath),
+                                drawing.ImportedEntityCount,
+                                drawing.SkippedEntityCount);
+                        }
+                        catch (System.Exception ex)
+                        {
+                            drawing.ImportError = ex.Message;
+                            ed.WriteMessage("\n  Import failed for {0}: {1}", Path.GetFileName(sourcePath), ex.Message);
+                        }
+                    }
+                }
+
+                WriteCfbkSummary(result);
+                ed.WriteMessage("\nCFBK complete.");
+                ed.WriteMessage("\n  Source drawings: {0}", sourceDrawings.Count);
+                ed.WriteMessage("\n  Imported drawings: {0}", result.ImportedDrawingCount);
+                ed.WriteMessage("\n  Import failures: {0}", result.ImportFailureCount);
+                ed.WriteMessage("\n  Objects imported: {0}", result.ImportedEntityCount);
+                ed.WriteMessage("\n  Objects skipped: {0}", result.SkippedEntityCount);
+                ed.WriteMessage("\n  Log folder: {0}", result.LogFolder);
+                ed.WriteMessage("\n");
+            }
+            catch (System.Exception ex)
+            {
+                ed.WriteMessage("\nCFBK failed: {0}", ex.Message);
                 ed.WriteMessage("\n");
             }
         }
@@ -200,7 +286,7 @@ namespace DraftingSuite
             if (ed == null)
                 return;
 
-            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
+            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, CFBK, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
             ed.WriteMessage("\n");
         }
 
@@ -220,6 +306,199 @@ namespace DraftingSuite
             settings.FlattenSkipBlockNamePatterns = new List<string>();
             settings.InvertKeepTextLayerPatterns = false;
             return settings;
+        }
+
+        private static string PromptCfbkSourceFolder(Document doc)
+        {
+            string initialFolder = null;
+            try
+            {
+                string drawingPath = doc?.Database?.Filename;
+                if (!string.IsNullOrWhiteSpace(drawingPath))
+                    initialFolder = Path.GetDirectoryName(drawingPath);
+            }
+            catch
+            {
+            }
+
+            using (WinForms.FolderBrowserDialog dialog = new WinForms.FolderBrowserDialog())
+            {
+                dialog.Description = "Select the folder containing processed FBK DWGs to combine";
+                if (!string.IsNullOrWhiteSpace(initialFolder) && Directory.Exists(initialFolder))
+                    dialog.SelectedPath = initialFolder;
+
+                return dialog.ShowDialog() == WinForms.DialogResult.OK ? dialog.SelectedPath : null;
+            }
+        }
+
+        private static string PromptCfbkFilter(Editor ed)
+        {
+            PromptStringOptions options = new PromptStringOptions("\nDWG file filter <*[Done].dwg>: ")
+            {
+                AllowSpaces = false
+            };
+
+            PromptResult result = ed.GetString(options);
+            if (result.Status == PromptStatus.Cancel)
+                return null;
+
+            string filter = (result.StringResult ?? string.Empty).Trim();
+            return string.IsNullOrWhiteSpace(filter) ? "*[Done].dwg" : filter;
+        }
+
+        private static List<string> FindCfbkSourceDrawings(string sourceFolder, string filter, string activeDrawingPath)
+        {
+            if (string.IsNullOrWhiteSpace(sourceFolder) || !Directory.Exists(sourceFolder))
+                return new List<string>();
+            if (string.IsNullOrWhiteSpace(filter))
+                filter = "*[Done].dwg";
+
+            string activeFullPath = string.IsNullOrWhiteSpace(activeDrawingPath)
+                ? string.Empty
+                : Path.GetFullPath(activeDrawingPath);
+
+            return Directory.GetFiles(sourceFolder, filter, SearchOption.TopDirectoryOnly)
+                .Where(path => !Path.GetFileName(path).StartsWith("~$", StringComparison.OrdinalIgnoreCase))
+                .Where(path => !string.Equals(Path.GetFullPath(path), activeFullPath, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static bool ConfirmCfbkRun(string sourceFolder, string filter, int drawingCount)
+        {
+            string message = string.Format(
+                CultureInfo.CurrentCulture,
+                "CFBK will combine allowed CAD objects from {0} drawing(s).\n\nFolder:\n{1}\n\nFilter:\n{2}\n\nIt imports annotations, blocks, and linework. It skips xrefs, rasters, COGO points, survey networks, underlays, point clouds, and unsupported Civil objects. The source drawings will not be modified.",
+                drawingCount,
+                sourceFolder,
+                filter);
+
+            return WinForms.MessageBox.Show(
+                message,
+                "Run CFBK",
+                WinForms.MessageBoxButtons.OKCancel,
+                WinForms.MessageBoxIcon.Question) == WinForms.DialogResult.OK;
+        }
+
+        private static CfbkRunResult CreateCfbkRunResult(string sourceFolder)
+        {
+            string runStamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            string logFolder = Path.Combine(sourceFolder, "_CFBK_Logs", runStamp);
+            Directory.CreateDirectory(logFolder);
+
+            return new CfbkRunResult { LogFolder = logFolder };
+        }
+
+        private static void CloneAllowedModelSpaceFromDrawing(Database destinationDb, string sourcePath, CfbkImportedDrawing result)
+        {
+            using (Database sourceDb = new Database(false, true))
+            {
+                sourceDb.ReadDwgFile(sourcePath, FileShare.ReadWrite, true, string.Empty);
+                sourceDb.CloseInput(true);
+
+                ObjectIdCollection sourceIds = new ObjectIdCollection();
+                using (Transaction tr = sourceDb.TransactionManager.StartTransaction())
+                {
+                    BlockTable blockTable = (BlockTable)tr.GetObject(sourceDb.BlockTableId, OpenMode.ForRead);
+                    BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+                    foreach (ObjectId id in modelSpace)
+                    {
+                        if (IsAllowedCfbkEntity(tr, id))
+                            sourceIds.Add(id);
+                        else
+                            result.SkippedEntityCount++;
+                    }
+
+                    tr.Commit();
+                }
+
+                if (sourceIds.Count == 0)
+                    return;
+
+                IdMapping mapping = new IdMapping();
+                sourceDb.WblockCloneObjects(
+                    sourceIds,
+                    SymbolUtilityServices.GetBlockModelSpaceId(destinationDb),
+                    mapping,
+                    DuplicateRecordCloning.Ignore,
+                    false);
+
+                result.ImportedEntityCount = sourceIds.Count;
+            }
+        }
+
+        private static bool IsAllowedCfbkEntity(Transaction tr, ObjectId id)
+        {
+            if (id.IsNull || id.IsErased)
+                return false;
+
+            Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+            if (entity == null)
+                return false;
+
+            if (IsCogoPoint(entity) || IsSurveyNetwork(entity))
+                return false;
+
+            if (entity is Line ||
+                entity is Polyline ||
+                entity is Polyline2d ||
+                entity is Polyline3d ||
+                entity is Arc ||
+                entity is Circle ||
+                entity is Spline ||
+                entity is Ellipse ||
+                entity is DBText ||
+                entity is MText ||
+                entity is MLeader ||
+                entity is Dimension)
+            {
+                return true;
+            }
+
+            BlockReference blockReference = entity as BlockReference;
+            if (blockReference == null)
+                return false;
+
+            return !IsXrefBlockReference(tr, blockReference);
+        }
+
+        private static bool IsXrefBlockReference(Transaction tr, BlockReference blockReference)
+        {
+            try
+            {
+                BlockTableRecord definition = tr.GetObject(blockReference.BlockTableRecord, OpenMode.ForRead, false) as BlockTableRecord;
+                return definition == null || definition.IsFromExternalReference || definition.IsFromOverlayReference;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static void WriteCfbkSummary(CfbkRunResult result)
+        {
+            string summaryPath = Path.Combine(result.LogFolder, "CFBK-summary.txt");
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("CFBK Summary");
+            builder.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture));
+            builder.AppendLine("Log folder: " + result.LogFolder);
+            builder.AppendLine("Source drawings: " + result.Drawings.Count.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Imported drawings: " + result.ImportedDrawingCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Import failures: " + result.ImportFailureCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Objects imported: " + result.ImportedEntityCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Objects skipped: " + result.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine();
+
+            foreach (CfbkImportedDrawing drawing in result.Drawings)
+            {
+                builder.AppendLine("Source: " + drawing.SourcePath);
+                builder.AppendLine("  Objects imported: " + drawing.ImportedEntityCount.ToString(CultureInfo.InvariantCulture));
+                builder.AppendLine("  Objects skipped: " + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
+                if (!string.IsNullOrWhiteSpace(drawing.ImportError))
+                    builder.AppendLine("  Import error: " + drawing.ImportError);
+            }
+
+            File.WriteAllText(summaryPath, builder.ToString(), Encoding.UTF8);
         }
 
         private static void RunSelectionUtility(
@@ -2056,6 +2335,29 @@ namespace DraftingSuite
             public double Height { get; }
             public double Rotation { get; }
             public string Layer { get; }
+        }
+
+        private sealed class CfbkRunResult
+        {
+            public string LogFolder { get; set; }
+            public List<CfbkImportedDrawing> Drawings { get; } = new List<CfbkImportedDrawing>();
+            public int ImportedDrawingCount => Drawings.Count(drawing => string.IsNullOrWhiteSpace(drawing.ImportError));
+            public int ImportFailureCount => Drawings.Count(drawing => !string.IsNullOrWhiteSpace(drawing.ImportError));
+            public int ImportedEntityCount => Drawings.Sum(drawing => drawing.ImportedEntityCount);
+            public int SkippedEntityCount => Drawings.Sum(drawing => drawing.SkippedEntityCount);
+        }
+
+        private sealed class CfbkImportedDrawing
+        {
+            public CfbkImportedDrawing(string sourcePath)
+            {
+                SourcePath = sourcePath;
+            }
+
+            public string SourcePath { get; }
+            public int ImportedEntityCount { get; set; }
+            public int SkippedEntityCount { get; set; }
+            public string ImportError { get; set; }
         }
 
         private sealed class FbkPrepResult

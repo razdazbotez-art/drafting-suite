@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.56`
+Current version: `0.1.58`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -9,6 +9,7 @@ New installs start with the built-in `Typical` preset.
 ## Commands
 
 - `DS` opens the tabbed Drafting Suite palette. The default Pad tab is a compact command pad; shared version and command information lives on the Help tab.
+- `CFBK` combines allowed CAD objects from processed FBK drawings in a selected folder into the active drawing.
 - `DSFBKPREP` prepares an opened fieldbook drawing for drafting.
 - `DSFBKCONFIG` opens the modeless FBK Prep Config window.
 - `DSMT2ML` converts selected text or mtext to mleaders using the drawing's current MLeader style when available.
@@ -43,3 +44,9 @@ New installs start with the built-in `Typical` preset.
 The command asks whether to process the entire drawing or the current selection. The extraction stage operates on generated output objects rather than deleting original drawing objects the way the legacy `XCOGO` undo/copy/paste sandbox did. Original drawing annotation is only eligible for text deletion, text-to-mleader conversion, or flattening when its layer matches the configured annotation layer list.
 
 FBK Prep Config values are stored in `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSuite\settings.json`. Presets are JSON files stored in the configured preset folder, which defaults to `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSuite\Presets`. The config window can load, save, rename, delete, and set a default preset for client or template standards.
+
+## CFBK
+
+`CFBK` combines already processed FBK drawings into the current working drawing. It asks for a folder and DWG filter, defaults to `*[Done].dwg`, opens each matching source drawing as a side database, and imports only allowed modelspace objects: linework, annotation, dimensions, mleaders, and normal block references.
+
+The source drawings are not modified. The command skips xref block references, raster images, PDF/DGN/DWF underlays, point clouds, Civil 3D COGO points, survey networks, and unsupported Civil/proxy objects. A run summary is written under `_CFBK_Logs`.
