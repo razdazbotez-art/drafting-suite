@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.60";
+        private const string Version = "0.1.61";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -140,14 +140,15 @@ namespace DraftingSuite
                 }
 
                 Dictionary<string, CfbkImportRecord> importRecords = ReadCfbkImportRecords(doc.Database);
-                if (!ConfirmCfbkRun(sourceFolder, filter, sourcePlan.MatchingDrawings.Count, importRecords.Count))
+                bool importCogoPoints = PromptCfbkImportCogoPoints();
+                if (!ConfirmCfbkRun(sourceFolder, filter, sourcePlan.MatchingDrawings.Count, importRecords.Count, importCogoPoints))
                 {
                     ed.WriteMessage("\nCFBK canceled.");
                     ed.WriteMessage("\n");
                     return;
                 }
 
-                CfbkRunResult result = CreateCfbkRunResult(sourceFolder, filter);
+                CfbkRunResult result = CreateCfbkRunResult(sourceFolder, filter, importCogoPoints);
                 AddIgnoredCfbkDrawings(result, sourcePlan.IgnoredDrawings);
                 using (doc.LockDocument())
                 {
@@ -184,13 +185,14 @@ namespace DraftingSuite
 
                         try
                         {
-                            CloneAllowedModelSpaceFromDrawing(doc.Database, sourcePath, drawing);
+                            CloneAllowedModelSpaceFromDrawing(doc.Database, sourcePath, drawing, importCogoPoints);
                             RegisterCfbkImport(doc.Database, drawing);
                             ed.WriteMessage(
-                                "\n  Imported {0}: {1} object(s), skipped {2}",
+                                "\n  Imported {0}: {1} object(s), skipped {2}, duplicate COGO {3}",
                                 Path.GetFileName(sourcePath),
                                 drawing.ImportedEntityCount,
-                                drawing.SkippedEntityCount);
+                                drawing.SkippedEntityCount,
+                                drawing.DuplicateCogoPointCount);
                         }
                         catch (System.Exception ex)
                         {
@@ -214,6 +216,8 @@ namespace DraftingSuite
                 ed.WriteMessage("\n  Previous objects erased: {0}", result.DeletedPreviousEntityCount);
                 ed.WriteMessage("\n  Objects imported: {0}", result.ImportedEntityCount);
                 ed.WriteMessage("\n  Objects skipped: {0}", result.SkippedEntityCount);
+                ed.WriteMessage("\n  COGO points imported: {0}", result.ImportedCogoPointCount);
+                ed.WriteMessage("\n  Duplicate COGO points skipped: {0}", result.DuplicateCogoPointCount);
                 ed.WriteMessage("\n  Log folder: {0}", result.LogFolder);
                 ed.WriteMessage("\n");
             }
@@ -425,14 +429,25 @@ namespace DraftingSuite
             return plan;
         }
 
-        private static bool ConfirmCfbkRun(string sourceFolder, string filter, int drawingCount, int priorImportCount)
+        private static bool PromptCfbkImportCogoPoints()
+        {
+            return WinForms.MessageBox.Show(
+                "Import new COGO points too?\n\nDuplicate point numbers, names, or matching rounded coordinates will be skipped. Existing destination COGO points will not be overwritten.",
+                "CFBK COGO Points",
+                WinForms.MessageBoxButtons.YesNo,
+                WinForms.MessageBoxIcon.Question,
+                WinForms.MessageBoxDefaultButton.Button2) == WinForms.DialogResult.Yes;
+        }
+
+        private static bool ConfirmCfbkRun(string sourceFolder, string filter, int drawingCount, int priorImportCount, bool importCogoPoints)
         {
             string message = string.Format(
                 CultureInfo.CurrentCulture,
-                "CFBK will combine allowed CAD objects from {0} matching drawing(s).\n\nFolder:\n{1}\n\nFilter:\n{2}\n\nThis drawing already has {3} remembered CFBK import record(s). Matching files already imported by path will be skipped.\n\nIt imports annotations, blocks, and linework. It skips xrefs, rasters, COGO points, survey networks, underlays, point clouds, and unsupported Civil objects. The source drawings will not be modified.",
+                "CFBK will combine allowed CAD objects from {0} matching drawing(s).\n\nFolder:\n{1}\n\nFilter:\n{2}\n\nCOGO points: {3}\n\nThis drawing already has {4} remembered CFBK import record(s). Matching unchanged files will be skipped. Matching changed files will erase their previous imported objects and import again.\n\nIt imports annotations, blocks, and linework. It skips xrefs, rasters, survey networks, underlays, point clouds, and unsupported Civil objects. The source drawings will not be modified.",
                 drawingCount,
                 sourceFolder,
                 filter,
+                importCogoPoints ? "import new points and skip duplicates" : "skip",
                 priorImportCount);
 
             return WinForms.MessageBox.Show(
@@ -442,13 +457,13 @@ namespace DraftingSuite
                 WinForms.MessageBoxIcon.Question) == WinForms.DialogResult.OK;
         }
 
-        private static CfbkRunResult CreateCfbkRunResult(string sourceFolder, string filter)
+        private static CfbkRunResult CreateCfbkRunResult(string sourceFolder, string filter, bool importCogoPoints)
         {
             string runStamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
             string logFolder = Path.Combine(sourceFolder, "_CFBK_Logs", runStamp);
             Directory.CreateDirectory(logFolder);
 
-            return new CfbkRunResult { LogFolder = logFolder, SourceFolder = sourceFolder, Filter = filter, StartedUtc = DateTime.UtcNow };
+            return new CfbkRunResult { LogFolder = logFolder, SourceFolder = sourceFolder, Filter = filter, ImportCogoPoints = importCogoPoints, StartedUtc = DateTime.UtcNow };
         }
 
         private static void AddIgnoredCfbkDrawings(CfbkRunResult result, IEnumerable<CfbkIgnoredDrawing> ignoredDrawings)
@@ -468,7 +483,7 @@ namespace DraftingSuite
             drawing.LastWriteUtc = info.Exists ? info.LastWriteTimeUtc : DateTime.MinValue;
         }
 
-        private static void CloneAllowedModelSpaceFromDrawing(Database destinationDb, string sourcePath, CfbkImportedDrawing result)
+        private static void CloneAllowedModelSpaceFromDrawing(Database destinationDb, string sourcePath, CfbkImportedDrawing result, bool importCogoPoints)
         {
             using (Database sourceDb = new Database(false, true))
             {
@@ -476,12 +491,30 @@ namespace DraftingSuite
                 sourceDb.CloseInput(true);
 
                 ObjectIdCollection sourceIds = new ObjectIdCollection();
+                HashSet<string> destinationCogoKeys = importCogoPoints ? CollectCfbkCogoKeys(destinationDb) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 using (Transaction tr = sourceDb.TransactionManager.StartTransaction())
                 {
                     BlockTable blockTable = (BlockTable)tr.GetObject(sourceDb.BlockTableId, OpenMode.ForRead);
                     BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForRead);
                     foreach (ObjectId id in modelSpace)
                     {
+                        DBObject obj = tr.GetObject(id, OpenMode.ForRead, false);
+                        if (importCogoPoints && IsCogoPoint(obj))
+                        {
+                            CfbkCogoPointSignature signature = ReadCfbkCogoPointSignature(obj);
+                            if (HasCfbkCogoDuplicate(destinationCogoKeys, signature))
+                            {
+                                result.DuplicateCogoPointCount++;
+                                result.SkippedEntityCount++;
+                                continue;
+                            }
+
+                            sourceIds.Add(id);
+                            result.ImportedCogoPointCount++;
+                            AddCfbkCogoKeys(destinationCogoKeys, signature);
+                            continue;
+                        }
+
                         if (IsAllowedCfbkEntity(tr, id))
                             sourceIds.Add(id);
                         else
@@ -572,6 +605,123 @@ namespace DraftingSuite
             }
         }
 
+        private static HashSet<string> CollectCfbkCogoKeys(Database db)
+        {
+            HashSet<string> keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+                foreach (ObjectId id in modelSpace)
+                {
+                    DBObject obj = tr.GetObject(id, OpenMode.ForRead, false);
+                    if (IsCogoPoint(obj))
+                        AddCfbkCogoKeys(keys, ReadCfbkCogoPointSignature(obj));
+                }
+
+                tr.Commit();
+            }
+
+            return keys;
+        }
+
+        private static bool HasCfbkCogoDuplicate(HashSet<string> existingKeys, CfbkCogoPointSignature signature)
+        {
+            foreach (string key in signature.Keys)
+            {
+                if (existingKeys.Contains(key))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static void AddCfbkCogoKeys(HashSet<string> keys, CfbkCogoPointSignature signature)
+        {
+            foreach (string key in signature.Keys)
+                keys.Add(key);
+        }
+
+        private static CfbkCogoPointSignature ReadCfbkCogoPointSignature(DBObject point)
+        {
+            CfbkCogoPointSignature signature = new CfbkCogoPointSignature();
+            string pointNumber = ReadCfbkCogoString(point, "PointNumber", "Number");
+            if (!string.IsNullOrWhiteSpace(pointNumber))
+                signature.Keys.Add("N:" + pointNumber.Trim());
+
+            string pointName = ReadCfbkCogoString(point, "PointName", "Name");
+            if (!string.IsNullOrWhiteSpace(pointName))
+                signature.Keys.Add("P:" + pointName.Trim());
+
+            Point3d? location = ReadCfbkCogoLocation(point);
+            if (location.HasValue)
+            {
+                Point3d value = location.Value;
+                signature.Keys.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "XYZ:{0:0.###},{1:0.###},{2:0.###}",
+                    value.X,
+                    value.Y,
+                    value.Z));
+            }
+
+            return signature;
+        }
+
+        private static string ReadCfbkCogoString(object point, params string[] propertyNames)
+        {
+            foreach (string propertyName in propertyNames)
+            {
+                object value = GetPropertyValue(point, propertyName);
+                if (value == null)
+                    continue;
+
+                string text = Convert.ToString(value, CultureInfo.InvariantCulture);
+                if (!string.IsNullOrWhiteSpace(text))
+                    return text;
+            }
+
+            return string.Empty;
+        }
+
+        private static Point3d? ReadCfbkCogoLocation(object point)
+        {
+            foreach (string propertyName in new[] { "Location", "Position" })
+            {
+                object value = GetPropertyValue(point, propertyName);
+                if (value is Point3d point3d)
+                    return point3d;
+            }
+
+            double? northing = ReadCfbkCogoDouble(point, "Northing", "Y");
+            double? easting = ReadCfbkCogoDouble(point, "Easting", "X");
+            double? elevation = ReadCfbkCogoDouble(point, "Elevation", "Z");
+            if (northing.HasValue && easting.HasValue)
+                return new Point3d(easting.Value, northing.Value, elevation ?? 0.0);
+
+            return null;
+        }
+
+        private static double? ReadCfbkCogoDouble(object point, params string[] propertyNames)
+        {
+            foreach (string propertyName in propertyNames)
+            {
+                object value = GetPropertyValue(point, propertyName);
+                if (value == null)
+                    continue;
+
+                try
+                {
+                    return Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
+        }
+
         private static Dictionary<string, CfbkImportRecord> ReadCfbkImportRecords(Database db)
         {
             Dictionary<string, CfbkImportRecord> records = new Dictionary<string, CfbkImportRecord>(StringComparer.OrdinalIgnoreCase);
@@ -649,7 +799,9 @@ namespace DraftingSuite
                 new TypedValue((int)DxfCode.Text, "fileSizeBytes=" + drawing.FileSizeBytes.ToString(CultureInfo.InvariantCulture)),
                 new TypedValue((int)DxfCode.Text, "lastWriteUtc=" + drawing.LastWriteUtc.ToString("o", CultureInfo.InvariantCulture)),
                 new TypedValue((int)DxfCode.Text, "objectsImported=" + drawing.ImportedEntityCount.ToString(CultureInfo.InvariantCulture)),
-                new TypedValue((int)DxfCode.Text, "objectsSkipped=" + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture))
+                new TypedValue((int)DxfCode.Text, "objectsSkipped=" + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "cogoImported=" + drawing.ImportedCogoPointCount.ToString(CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "cogoDuplicates=" + drawing.DuplicateCogoPointCount.ToString(CultureInfo.InvariantCulture))
             };
 
             int index = 0;
@@ -820,6 +972,7 @@ namespace DraftingSuite
                 "Run: " + result.StartedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture),
                 "Source folder: " + result.SourceFolder,
                 "Filter: " + result.Filter,
+                "COGO points: " + (result.ImportCogoPoints ? "Import new points, skip duplicates" : "Skipped"),
                 "Imported drawings: " + result.ImportedDrawingCount.ToString(CultureInfo.InvariantCulture),
                 "Reimported changed drawings: " + result.ReimportedDrawingCount.ToString(CultureInfo.InvariantCulture),
                 "Already imported and unchanged: " + result.AlreadyImportedCount.ToString(CultureInfo.InvariantCulture),
@@ -828,6 +981,8 @@ namespace DraftingSuite
                 "Ignored or filtered drawings: " + result.IgnoredDrawingCount.ToString(CultureInfo.InvariantCulture),
                 "Previous objects erased: " + result.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture),
                 "Objects imported: " + result.ImportedEntityCount.ToString(CultureInfo.InvariantCulture),
+                "COGO points imported: " + result.ImportedCogoPointCount.ToString(CultureInfo.InvariantCulture),
+                "Duplicate COGO points skipped: " + result.DuplicateCogoPointCount.ToString(CultureInfo.InvariantCulture),
                 string.Empty,
                 "FILES"
             };
@@ -843,6 +998,8 @@ namespace DraftingSuite
 
                 if (drawing.ImportedEntityCount > 0 || drawing.SkippedEntityCount > 0)
                     detail += string.Format(CultureInfo.CurrentCulture, " ({0} imported, {1} skipped)", drawing.ImportedEntityCount, drawing.SkippedEntityCount);
+                if (drawing.ImportedCogoPointCount > 0 || drawing.DuplicateCogoPointCount > 0)
+                    detail += string.Format(CultureInfo.CurrentCulture, " ({0} COGO imported, {1} COGO duplicates)", drawing.ImportedCogoPointCount, drawing.DuplicateCogoPointCount);
                 if (drawing.DeletedPreviousEntityCount > 0)
                     detail += " (" + drawing.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture) + " previous erased)";
                 if (drawing.LastWriteUtc != DateTime.MinValue)
@@ -922,6 +1079,7 @@ namespace DraftingSuite
             builder.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture));
             builder.AppendLine("Source folder: " + result.SourceFolder);
             builder.AppendLine("Filter: " + result.Filter);
+            builder.AppendLine("COGO points: " + (result.ImportCogoPoints ? "Import new points, skip duplicates" : "Skipped"));
             builder.AppendLine("Log folder: " + result.LogFolder);
             builder.AppendLine("Source drawings: " + result.Drawings.Count.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Imported drawings: " + result.ImportedDrawingCount.ToString(CultureInfo.InvariantCulture));
@@ -933,6 +1091,8 @@ namespace DraftingSuite
             builder.AppendLine("Previous objects erased: " + result.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Objects imported: " + result.ImportedEntityCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Objects skipped: " + result.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("COGO points imported: " + result.ImportedCogoPointCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Duplicate COGO points skipped: " + result.DuplicateCogoPointCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine();
 
             foreach (CfbkImportedDrawing drawing in result.Drawings)
@@ -941,6 +1101,8 @@ namespace DraftingSuite
                 builder.AppendLine("  Status: " + drawing.StatusText);
                 builder.AppendLine("  Objects imported: " + drawing.ImportedEntityCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  Objects skipped: " + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
+                builder.AppendLine("  COGO points imported: " + drawing.ImportedCogoPointCount.ToString(CultureInfo.InvariantCulture));
+                builder.AppendLine("  Duplicate COGO points skipped: " + drawing.DuplicateCogoPointCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  Previous objects erased: " + drawing.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  Source file size: " + drawing.FileSizeBytes.ToString(CultureInfo.InvariantCulture));
                 if (drawing.LastWriteUtc != DateTime.MinValue)
@@ -2799,6 +2961,7 @@ namespace DraftingSuite
             public string LogFolder { get; set; }
             public string SourceFolder { get; set; }
             public string Filter { get; set; }
+            public bool ImportCogoPoints { get; set; }
             public DateTime StartedUtc { get; set; }
             public List<CfbkImportedDrawing> Drawings { get; } = new List<CfbkImportedDrawing>();
             public int ImportedDrawingCount => Drawings.Count(drawing => drawing.ImportedUtc.HasValue && string.IsNullOrWhiteSpace(drawing.ImportError));
@@ -2813,6 +2976,8 @@ namespace DraftingSuite
             public int DeletedPreviousEntityCount => Drawings.Sum(drawing => drawing.DeletedPreviousEntityCount);
             public int ImportedEntityCount => Drawings.Sum(drawing => drawing.ImportedEntityCount);
             public int SkippedEntityCount => Drawings.Sum(drawing => drawing.SkippedEntityCount);
+            public int ImportedCogoPointCount => Drawings.Sum(drawing => drawing.ImportedCogoPointCount);
+            public int DuplicateCogoPointCount => Drawings.Sum(drawing => drawing.DuplicateCogoPointCount);
         }
 
         private sealed class CfbkImportedDrawing
@@ -2825,6 +2990,8 @@ namespace DraftingSuite
             public string SourcePath { get; }
             public int ImportedEntityCount { get; set; }
             public int SkippedEntityCount { get; set; }
+            public int ImportedCogoPointCount { get; set; }
+            public int DuplicateCogoPointCount { get; set; }
             public string SkipReason { get; set; }
             public string ImportError { get; set; }
             public long FileSizeBytes { get; set; }
@@ -2891,6 +3058,11 @@ namespace DraftingSuite
             {
                 return FileSizeBytes == fileSizeBytes && LastWriteUtc == lastWriteUtc;
             }
+        }
+
+        private sealed class CfbkCogoPointSignature
+        {
+            public HashSet<string> Keys { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         private sealed class FbkPrepResult
