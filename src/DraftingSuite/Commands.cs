@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.63";
+        private const string Version = "0.1.64";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -164,6 +164,7 @@ namespace DraftingSuite
                             if (!existingRecord.CanRefresh)
                             {
                                 drawing.SkipReason = "Already imported by legacy record";
+                                drawing.DestinationHandles.AddRange(existingRecord.DestinationHandles);
                                 ed.WriteMessage("\n  Skipped {0}: already imported by a record without refresh handles.", Path.GetFileName(sourcePath));
                                 continue;
                             }
@@ -171,6 +172,7 @@ namespace DraftingSuite
                             if (existingRecord.Matches(drawing.FileSizeBytes, drawing.LastWriteUtc))
                             {
                                 drawing.SkipReason = "Already imported and unchanged";
+                                drawing.DestinationHandles.AddRange(existingRecord.DestinationHandles);
                                 ed.WriteMessage("\n  Skipped {0}: already imported and unchanged.", Path.GetFileName(sourcePath));
                                 continue;
                             }
@@ -1165,11 +1167,12 @@ namespace DraftingSuite
 
                 double baseTextHeight = db.Textsize > 0.0 ? db.Textsize : 2.5;
                 double textHeight = baseTextHeight * 20.0;
+                double reportWidth = textHeight * 140.0;
                 MText report = new MText
                 {
-                    Location = GetCfbkReportLocation(ed),
+                    Location = GetCfbkReportLocation(db, ed, result, reportWidth),
                     TextHeight = textHeight,
-                    Width = textHeight * 140.0,
+                    Width = reportWidth,
                     Attachment = AttachmentPoint.TopRight,
                     Contents = BuildCfbkReportMText(result)
                 };
@@ -1180,7 +1183,65 @@ namespace DraftingSuite
             }
         }
 
-        private static Point3d GetCfbkReportLocation(Editor ed)
+        private static Point3d GetCfbkReportLocation(Database db, Editor ed, CfbkRunResult result, double reportWidth)
+        {
+            Extents3d? extents = GetCfbkImportedExtents(db, result);
+            if (extents.HasValue)
+                return new Point3d(extents.Value.MaxPoint.X + 500.0 + reportWidth, extents.Value.MaxPoint.Y, 0.0);
+
+            return GetCfbkFallbackReportLocation(ed);
+        }
+
+        private static Extents3d? GetCfbkImportedExtents(Database db, CfbkRunResult result)
+        {
+            Extents3d? combined = null;
+            List<string> handles = result.Drawings
+                .SelectMany(drawing => drawing.DestinationHandles)
+                .Where(handle => !string.IsNullOrWhiteSpace(handle))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (handles.Count == 0)
+                return null;
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                foreach (string handle in handles)
+                {
+                    ObjectId id = GetObjectIdFromHandle(db, handle);
+                    if (id.IsNull || id.IsErased)
+                        continue;
+
+                    Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                    if (entity == null || entity.IsErased)
+                        continue;
+
+                    try
+                    {
+                        Extents3d entityExtents = entity.GeometricExtents;
+                        if (combined.HasValue)
+                        {
+                            Extents3d expanded = combined.Value;
+                            expanded.AddExtents(entityExtents);
+                            combined = expanded;
+                        }
+                        else
+                        {
+                            combined = entityExtents;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                tr.Commit();
+            }
+
+            return combined;
+        }
+
+        private static Point3d GetCfbkFallbackReportLocation(Editor ed)
         {
             try
             {
