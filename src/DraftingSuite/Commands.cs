@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.59";
+        private const string Version = "0.1.60";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -155,13 +155,31 @@ namespace DraftingSuite
                     {
                         CfbkImportedDrawing drawing = new CfbkImportedDrawing(sourcePath);
                         result.Drawings.Add(drawing);
+                        ApplyCfbkFileSignature(drawing);
                         CfbkImportRecord existingRecord;
                         if (importRecords.TryGetValue(NormalizeCfbkPath(sourcePath), out existingRecord))
                         {
-                            drawing.SkipReason = "Already imported";
                             drawing.PreviousImportUtc = existingRecord.ImportedUtc;
-                            ed.WriteMessage("\n  Skipped {0}: already imported.", Path.GetFileName(sourcePath));
-                            continue;
+                            if (!existingRecord.CanRefresh)
+                            {
+                                drawing.SkipReason = "Already imported by legacy record";
+                                ed.WriteMessage("\n  Skipped {0}: already imported by a record without refresh handles.", Path.GetFileName(sourcePath));
+                                continue;
+                            }
+
+                            if (existingRecord.Matches(drawing.FileSizeBytes, drawing.LastWriteUtc))
+                            {
+                                drawing.SkipReason = "Already imported and unchanged";
+                                ed.WriteMessage("\n  Skipped {0}: already imported and unchanged.", Path.GetFileName(sourcePath));
+                                continue;
+                            }
+
+                            drawing.WasReimported = true;
+                            drawing.DeletedPreviousEntityCount = DeleteCfbkImportedObjects(doc.Database, existingRecord);
+                            ed.WriteMessage(
+                                "\n  Reimporting {0}: source changed, erased {1} previous object(s).",
+                                Path.GetFileName(sourcePath),
+                                drawing.DeletedPreviousEntityCount);
                         }
 
                         try
@@ -188,9 +206,12 @@ namespace DraftingSuite
                 ed.WriteMessage("\nCFBK complete.");
                 ed.WriteMessage("\n  Matching source drawings: {0}", sourcePlan.MatchingDrawings.Count);
                 ed.WriteMessage("\n  Imported drawings: {0}", result.ImportedDrawingCount);
-                ed.WriteMessage("\n  Already imported: {0}", result.AlreadyImportedCount);
+                ed.WriteMessage("\n  Reimported changed drawings: {0}", result.ReimportedDrawingCount);
+                ed.WriteMessage("\n  Already imported and unchanged: {0}", result.AlreadyImportedCount);
+                ed.WriteMessage("\n  Legacy import records skipped: {0}", result.LegacyImportRecordCount);
                 ed.WriteMessage("\n  Import failures: {0}", result.ImportFailureCount);
                 ed.WriteMessage("\n  Ignored or filtered drawings: {0}", result.IgnoredDrawingCount);
+                ed.WriteMessage("\n  Previous objects erased: {0}", result.DeletedPreviousEntityCount);
                 ed.WriteMessage("\n  Objects imported: {0}", result.ImportedEntityCount);
                 ed.WriteMessage("\n  Objects skipped: {0}", result.SkippedEntityCount);
                 ed.WriteMessage("\n  Log folder: {0}", result.LogFolder);
@@ -440,6 +461,13 @@ namespace DraftingSuite
             }
         }
 
+        private static void ApplyCfbkFileSignature(CfbkImportedDrawing drawing)
+        {
+            FileInfo info = new FileInfo(drawing.SourcePath);
+            drawing.FileSizeBytes = info.Exists ? info.Length : -1;
+            drawing.LastWriteUtc = info.Exists ? info.LastWriteTimeUtc : DateTime.MinValue;
+        }
+
         private static void CloneAllowedModelSpaceFromDrawing(Database destinationDb, string sourcePath, CfbkImportedDrawing result)
         {
             using (Database sourceDb = new Database(false, true))
@@ -475,6 +503,72 @@ namespace DraftingSuite
                     false);
 
                 result.ImportedEntityCount = sourceIds.Count;
+                result.DestinationHandles.AddRange(ReadClonedHandles(destinationDb, mapping));
+            }
+        }
+
+        private static List<string> ReadClonedHandles(Database db, IdMapping mapping)
+        {
+            List<string> handles = new List<string>();
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                foreach (IdPair pair in mapping)
+                {
+                    if (!pair.IsCloned || pair.Value.IsNull || pair.Value.IsErased)
+                        continue;
+
+                    Entity entity = tr.GetObject(pair.Value, OpenMode.ForRead, false) as Entity;
+                    if (entity != null)
+                        handles.Add(entity.Handle.ToString());
+                }
+
+                tr.Commit();
+            }
+
+            return handles;
+        }
+
+        private static int DeleteCfbkImportedObjects(Database db, CfbkImportRecord record)
+        {
+            int deleted = 0;
+            if (record == null || record.DestinationHandles.Count == 0)
+                return deleted;
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                foreach (string handleText in record.DestinationHandles)
+                {
+                    ObjectId id = GetObjectIdFromHandle(db, handleText);
+                    if (id.IsNull || id.IsErased)
+                        continue;
+
+                    Entity entity = tr.GetObject(id, OpenMode.ForWrite, false) as Entity;
+                    if (entity == null || entity.IsErased)
+                        continue;
+
+                    entity.Erase();
+                    deleted++;
+                }
+
+                tr.Commit();
+            }
+
+            return deleted;
+        }
+
+        private static ObjectId GetObjectIdFromHandle(Database db, string handleText)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(handleText))
+                    return ObjectId.Null;
+
+                long handleValue = Convert.ToInt64(handleText, 16);
+                return db.GetObjectId(false, new Handle(handleValue), 0);
+            }
+            catch
+            {
+                return ObjectId.Null;
             }
         }
 
@@ -552,6 +646,8 @@ namespace DraftingSuite
                 new TypedValue((int)DxfCode.Text, "schema=" + CfbkImportSchema),
                 new TypedValue((int)DxfCode.Text, "importedUtc=" + drawing.ImportedUtc.Value.ToString("o", CultureInfo.InvariantCulture)),
                 new TypedValue((int)DxfCode.Text, "sourceFile=" + Path.GetFileName(drawing.SourcePath)),
+                new TypedValue((int)DxfCode.Text, "fileSizeBytes=" + drawing.FileSizeBytes.ToString(CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "lastWriteUtc=" + drawing.LastWriteUtc.ToString("o", CultureInfo.InvariantCulture)),
                 new TypedValue((int)DxfCode.Text, "objectsImported=" + drawing.ImportedEntityCount.ToString(CultureInfo.InvariantCulture)),
                 new TypedValue((int)DxfCode.Text, "objectsSkipped=" + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture))
             };
@@ -563,6 +659,9 @@ namespace DraftingSuite
                 index++;
             }
 
+            foreach (string handle in drawing.DestinationHandles)
+                values.Add(new TypedValue((int)DxfCode.Text, "handle=" + handle));
+
             return new ResultBuffer(values.ToArray());
         }
 
@@ -573,6 +672,9 @@ namespace DraftingSuite
 
             Dictionary<int, string> pathChunks = new Dictionary<int, string>();
             DateTime importedUtc = DateTime.MinValue;
+            DateTime lastWriteUtc = DateTime.MinValue;
+            long fileSizeBytes = -1;
+            List<string> destinationHandles = new List<string>();
             bool hasSchema = false;
             foreach (TypedValue value in record.Data)
             {
@@ -594,6 +696,30 @@ namespace DraftingSuite
                     continue;
                 }
 
+                if (text.StartsWith("lastWriteUtc=", StringComparison.OrdinalIgnoreCase))
+                {
+                    DateTime parsed;
+                    if (DateTime.TryParse(text.Substring("lastWriteUtc=".Length), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out parsed))
+                        lastWriteUtc = parsed.ToUniversalTime();
+                    continue;
+                }
+
+                if (text.StartsWith("fileSizeBytes=", StringComparison.OrdinalIgnoreCase))
+                {
+                    long parsed;
+                    if (long.TryParse(text.Substring("fileSizeBytes=".Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed))
+                        fileSizeBytes = parsed;
+                    continue;
+                }
+
+                if (text.StartsWith("handle=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string handle = text.Substring("handle=".Length).Trim();
+                    if (!string.IsNullOrWhiteSpace(handle))
+                        destinationHandles.Add(handle);
+                    continue;
+                }
+
                 Match match = Regex.Match(text, "^path([0-9]+)=(.*)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
                 if (match.Success)
                     pathChunks[int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)] = match.Groups[2].Value;
@@ -603,7 +729,7 @@ namespace DraftingSuite
                 return null;
 
             string normalizedPath = string.Concat(pathChunks.OrderBy(pair => pair.Key).Select(pair => pair.Value));
-            return new CfbkImportRecord(normalizedPath, importedUtc);
+            return new CfbkImportRecord(normalizedPath, importedUtc, fileSizeBytes, lastWriteUtc, destinationHandles);
         }
 
         private static IEnumerable<string> ChunkCfbkText(string value, int maxLength)
@@ -695,9 +821,12 @@ namespace DraftingSuite
                 "Source folder: " + result.SourceFolder,
                 "Filter: " + result.Filter,
                 "Imported drawings: " + result.ImportedDrawingCount.ToString(CultureInfo.InvariantCulture),
-                "Already imported: " + result.AlreadyImportedCount.ToString(CultureInfo.InvariantCulture),
+                "Reimported changed drawings: " + result.ReimportedDrawingCount.ToString(CultureInfo.InvariantCulture),
+                "Already imported and unchanged: " + result.AlreadyImportedCount.ToString(CultureInfo.InvariantCulture),
+                "Legacy import records skipped: " + result.LegacyImportRecordCount.ToString(CultureInfo.InvariantCulture),
                 "Import failures: " + result.ImportFailureCount.ToString(CultureInfo.InvariantCulture),
                 "Ignored or filtered drawings: " + result.IgnoredDrawingCount.ToString(CultureInfo.InvariantCulture),
+                "Previous objects erased: " + result.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture),
                 "Objects imported: " + result.ImportedEntityCount.ToString(CultureInfo.InvariantCulture),
                 string.Empty,
                 "FILES"
@@ -714,6 +843,10 @@ namespace DraftingSuite
 
                 if (drawing.ImportedEntityCount > 0 || drawing.SkippedEntityCount > 0)
                     detail += string.Format(CultureInfo.CurrentCulture, " ({0} imported, {1} skipped)", drawing.ImportedEntityCount, drawing.SkippedEntityCount);
+                if (drawing.DeletedPreviousEntityCount > 0)
+                    detail += " (" + drawing.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture) + " previous erased)";
+                if (drawing.LastWriteUtc != DateTime.MinValue)
+                    detail += " (modified " + drawing.LastWriteUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture) + ")";
                 if (drawing.PreviousImportUtc.HasValue)
                     detail += " (previous import " + drawing.PreviousImportUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture) + ")";
                 if (!string.IsNullOrWhiteSpace(drawing.ImportError))
@@ -792,9 +925,12 @@ namespace DraftingSuite
             builder.AppendLine("Log folder: " + result.LogFolder);
             builder.AppendLine("Source drawings: " + result.Drawings.Count.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Imported drawings: " + result.ImportedDrawingCount.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine("Already imported: " + result.AlreadyImportedCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Reimported changed drawings: " + result.ReimportedDrawingCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Already imported and unchanged: " + result.AlreadyImportedCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Legacy import records skipped: " + result.LegacyImportRecordCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Import failures: " + result.ImportFailureCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Ignored or filtered drawings: " + result.IgnoredDrawingCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Previous objects erased: " + result.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Objects imported: " + result.ImportedEntityCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Objects skipped: " + result.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine();
@@ -805,6 +941,10 @@ namespace DraftingSuite
                 builder.AppendLine("  Status: " + drawing.StatusText);
                 builder.AppendLine("  Objects imported: " + drawing.ImportedEntityCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  Objects skipped: " + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
+                builder.AppendLine("  Previous objects erased: " + drawing.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture));
+                builder.AppendLine("  Source file size: " + drawing.FileSizeBytes.ToString(CultureInfo.InvariantCulture));
+                if (drawing.LastWriteUtc != DateTime.MinValue)
+                    builder.AppendLine("  Source modified UTC: " + drawing.LastWriteUtc.ToString("o", CultureInfo.InvariantCulture));
                 if (drawing.ImportedUtc.HasValue)
                     builder.AppendLine("  Imported UTC: " + drawing.ImportedUtc.Value.ToString("o", CultureInfo.InvariantCulture));
                 if (drawing.PreviousImportUtc.HasValue)
@@ -2662,9 +2802,15 @@ namespace DraftingSuite
             public DateTime StartedUtc { get; set; }
             public List<CfbkImportedDrawing> Drawings { get; } = new List<CfbkImportedDrawing>();
             public int ImportedDrawingCount => Drawings.Count(drawing => drawing.ImportedUtc.HasValue && string.IsNullOrWhiteSpace(drawing.ImportError));
-            public int AlreadyImportedCount => Drawings.Count(drawing => string.Equals(drawing.SkipReason, "Already imported", StringComparison.OrdinalIgnoreCase));
+            public int ReimportedDrawingCount => Drawings.Count(drawing => drawing.WasReimported && drawing.ImportedUtc.HasValue && string.IsNullOrWhiteSpace(drawing.ImportError));
+            public int AlreadyImportedCount => Drawings.Count(drawing => string.Equals(drawing.SkipReason, "Already imported and unchanged", StringComparison.OrdinalIgnoreCase));
+            public int LegacyImportRecordCount => Drawings.Count(drawing => string.Equals(drawing.SkipReason, "Already imported by legacy record", StringComparison.OrdinalIgnoreCase));
             public int ImportFailureCount => Drawings.Count(drawing => !string.IsNullOrWhiteSpace(drawing.ImportError));
-            public int IgnoredDrawingCount => Drawings.Count(drawing => !string.IsNullOrWhiteSpace(drawing.SkipReason) && !string.Equals(drawing.SkipReason, "Already imported", StringComparison.OrdinalIgnoreCase));
+            public int IgnoredDrawingCount => Drawings.Count(drawing =>
+                !string.IsNullOrWhiteSpace(drawing.SkipReason) &&
+                !string.Equals(drawing.SkipReason, "Already imported and unchanged", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(drawing.SkipReason, "Already imported by legacy record", StringComparison.OrdinalIgnoreCase));
+            public int DeletedPreviousEntityCount => Drawings.Sum(drawing => drawing.DeletedPreviousEntityCount);
             public int ImportedEntityCount => Drawings.Sum(drawing => drawing.ImportedEntityCount);
             public int SkippedEntityCount => Drawings.Sum(drawing => drawing.SkippedEntityCount);
         }
@@ -2681,8 +2827,13 @@ namespace DraftingSuite
             public int SkippedEntityCount { get; set; }
             public string SkipReason { get; set; }
             public string ImportError { get; set; }
+            public long FileSizeBytes { get; set; }
+            public DateTime LastWriteUtc { get; set; }
             public DateTime? ImportedUtc { get; set; }
             public DateTime? PreviousImportUtc { get; set; }
+            public bool WasReimported { get; set; }
+            public int DeletedPreviousEntityCount { get; set; }
+            public List<string> DestinationHandles { get; } = new List<string>();
 
             public string StatusText
             {
@@ -2693,7 +2844,7 @@ namespace DraftingSuite
                     if (!string.IsNullOrWhiteSpace(SkipReason))
                         return SkipReason;
                     if (ImportedUtc.HasValue)
-                        return "Imported";
+                        return WasReimported ? "Reimported" : "Imported";
                     return "Pending";
                 }
             }
@@ -2719,14 +2870,27 @@ namespace DraftingSuite
 
         private sealed class CfbkImportRecord
         {
-            public CfbkImportRecord(string normalizedPath, DateTime importedUtc)
+            public CfbkImportRecord(string normalizedPath, DateTime importedUtc, long fileSizeBytes, DateTime lastWriteUtc, IEnumerable<string> destinationHandles)
             {
                 NormalizedPath = normalizedPath;
                 ImportedUtc = importedUtc;
+                FileSizeBytes = fileSizeBytes;
+                LastWriteUtc = lastWriteUtc;
+                DestinationHandles = destinationHandles == null ? new List<string>() : destinationHandles.Where(handle => !string.IsNullOrWhiteSpace(handle)).ToList();
             }
 
             public string NormalizedPath { get; }
             public DateTime ImportedUtc { get; }
+            public long FileSizeBytes { get; }
+            public DateTime LastWriteUtc { get; }
+            public List<string> DestinationHandles { get; }
+
+            public bool CanRefresh => FileSizeBytes >= 0 && LastWriteUtc != DateTime.MinValue;
+
+            public bool Matches(long fileSizeBytes, DateTime lastWriteUtc)
+            {
+                return FileSizeBytes == fileSizeBytes && LastWriteUtc == lastWriteUtc;
+            }
         }
 
         private sealed class FbkPrepResult
