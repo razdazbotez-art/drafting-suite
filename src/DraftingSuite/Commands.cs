@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.68";
+        private const string Version = "0.1.69";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -1412,6 +1412,14 @@ namespace DraftingSuite
                 entity is Circle ||
                 entity is Spline ||
                 entity is Ellipse ||
+                entity is Hatch ||
+                entity is Solid ||
+                entity is Face ||
+                entity is Trace ||
+                entity is Region ||
+                entity is Wipeout ||
+                entity is Ray ||
+                entity is Xline ||
                 entity is DBPoint ||
                 entity is DBText ||
                 entity is MText ||
