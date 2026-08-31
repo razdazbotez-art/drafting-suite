@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.64";
+        private const string Version = "0.1.65";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -1173,7 +1173,7 @@ namespace DraftingSuite
                     Location = GetCfbkReportLocation(db, ed, result, reportWidth),
                     TextHeight = textHeight,
                     Width = reportWidth,
-                    Attachment = AttachmentPoint.TopRight,
+                    Attachment = AttachmentPoint.TopLeft,
                     Contents = BuildCfbkReportMText(result)
                 };
 
@@ -1187,7 +1187,7 @@ namespace DraftingSuite
         {
             Extents3d? extents = GetCfbkImportedExtents(db, result);
             if (extents.HasValue)
-                return new Point3d(extents.Value.MaxPoint.X + 500.0 + reportWidth, extents.Value.MaxPoint.Y, 0.0);
+                return new Point3d(extents.Value.MaxPoint.X + 500.0, extents.Value.MaxPoint.Y, 0.0);
 
             return GetCfbkFallbackReportLocation(ed);
         }
