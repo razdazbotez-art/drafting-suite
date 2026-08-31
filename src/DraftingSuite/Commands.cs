@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.61";
+        private const string Version = "0.1.62";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -188,10 +188,11 @@ namespace DraftingSuite
                             CloneAllowedModelSpaceFromDrawing(doc.Database, sourcePath, drawing, importCogoPoints);
                             RegisterCfbkImport(doc.Database, drawing);
                             ed.WriteMessage(
-                                "\n  Imported {0}: {1} object(s), skipped {2}, duplicate COGO {3}",
+                                "\n  Imported {0}: {1} object(s), skipped {2}, COGO imported {3}, duplicate COGO {4}",
                                 Path.GetFileName(sourcePath),
                                 drawing.ImportedEntityCount,
                                 drawing.SkippedEntityCount,
+                                drawing.ImportedCogoPointCount,
                                 drawing.DuplicateCogoPointCount);
                         }
                         catch (System.Exception ex)
@@ -218,6 +219,7 @@ namespace DraftingSuite
                 ed.WriteMessage("\n  Objects skipped: {0}", result.SkippedEntityCount);
                 ed.WriteMessage("\n  COGO points imported: {0}", result.ImportedCogoPointCount);
                 ed.WriteMessage("\n  Duplicate COGO points skipped: {0}", result.DuplicateCogoPointCount);
+                ed.WriteMessage("\n  COGO point import failures: {0}", result.CogoPointImportFailureCount);
                 ed.WriteMessage("\n  Log folder: {0}", result.LogFolder);
                 ed.WriteMessage("\n");
             }
@@ -492,6 +494,7 @@ namespace DraftingSuite
 
                 ObjectIdCollection sourceIds = new ObjectIdCollection();
                 HashSet<string> destinationCogoKeys = importCogoPoints ? CollectCfbkCogoKeys(destinationDb) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                List<CfbkCogoPointData> cogoPointsToImport = new List<CfbkCogoPointData>();
                 using (Transaction tr = sourceDb.TransactionManager.StartTransaction())
                 {
                     BlockTable blockTable = (BlockTable)tr.GetObject(sourceDb.BlockTableId, OpenMode.ForRead);
@@ -509,8 +512,15 @@ namespace DraftingSuite
                                 continue;
                             }
 
-                            sourceIds.Add(id);
-                            result.ImportedCogoPointCount++;
+                            CfbkCogoPointData data = ReadCfbkCogoPointData(obj);
+                            if (data == null)
+                            {
+                                result.CogoPointImportFailureCount++;
+                                result.SkippedEntityCount++;
+                                continue;
+                            }
+
+                            cogoPointsToImport.Add(data);
                             AddCfbkCogoKeys(destinationCogoKeys, signature);
                             continue;
                         }
@@ -525,7 +535,10 @@ namespace DraftingSuite
                 }
 
                 if (sourceIds.Count == 0)
+                {
+                    ImportCfbkCogoPoints(cogoPointsToImport, result);
                     return;
+                }
 
                 IdMapping mapping = new IdMapping();
                 sourceDb.WblockCloneObjects(
@@ -537,6 +550,7 @@ namespace DraftingSuite
 
                 result.ImportedEntityCount = sourceIds.Count;
                 result.DestinationHandles.AddRange(ReadClonedHandles(destinationDb, mapping));
+                ImportCfbkCogoPoints(cogoPointsToImport, result);
             }
         }
 
@@ -605,11 +619,195 @@ namespace DraftingSuite
             }
         }
 
+        private static void ImportCfbkCogoPoints(IEnumerable<CfbkCogoPointData> sourcePoints, CfbkImportedDrawing result)
+        {
+            List<CfbkCogoPointData> points = sourcePoints == null ? new List<CfbkCogoPointData>() : sourcePoints.ToList();
+            if (points.Count == 0)
+                return;
+
+            object civilDocument = GetActiveCivilDocument();
+            object cogoPoints = GetPropertyValue(civilDocument, "CogoPoints");
+            if (cogoPoints == null)
+            {
+                result.CogoPointImportFailureCount += points.Count;
+                result.SkippedEntityCount += points.Count;
+                return;
+            }
+
+            foreach (CfbkCogoPointData point in points)
+            {
+                try
+                {
+                    ObjectId createdId = AddCfbkCogoPoint(cogoPoints, point);
+                    if (createdId.IsNull)
+                    {
+                        result.CogoPointImportFailureCount++;
+                        result.SkippedEntityCount++;
+                        continue;
+                    }
+
+                    ApplyCfbkCogoPointProperties(createdId, point);
+                    result.ImportedCogoPointCount++;
+                    result.ImportedEntityCount++;
+                    string handle = GetHandleText(createdId);
+                    if (!string.IsNullOrWhiteSpace(handle))
+                        result.DestinationHandles.Add(handle);
+                }
+                catch
+                {
+                    result.CogoPointImportFailureCount++;
+                    result.SkippedEntityCount++;
+                }
+            }
+        }
+
+        private static ObjectId AddCfbkCogoPoint(object cogoPoints, CfbkCogoPointData point)
+        {
+            Type type = cogoPoints.GetType();
+            foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!string.Equals(method.Name, "Add", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                ParameterInfo[] parameters = method.GetParameters();
+                object[] args = BuildCfbkCogoAddArguments(parameters, point);
+                if (args == null)
+                    continue;
+
+                try
+                {
+                    object value = method.Invoke(cogoPoints, args);
+                    ObjectId id = ExtractObjectIdFromAddResult(value);
+                    if (!id.IsNull)
+                        return id;
+                }
+                catch
+                {
+                }
+            }
+
+            return ObjectId.Null;
+        }
+
+        private static object[] BuildCfbkCogoAddArguments(ParameterInfo[] parameters, CfbkCogoPointData point)
+        {
+            if (parameters.Length == 2 &&
+                parameters[0].ParameterType == typeof(Point3d) &&
+                parameters[1].ParameterType == typeof(bool))
+            {
+                return new object[] { point.Location, true };
+            }
+
+            if (parameters.Length == 5 &&
+                parameters[0].ParameterType == typeof(Point3dCollection) &&
+                parameters[1].ParameterType == typeof(string) &&
+                parameters[2].ParameterType == typeof(bool) &&
+                parameters[3].ParameterType == typeof(bool) &&
+                parameters[4].ParameterType == typeof(bool))
+            {
+                Point3dCollection locations = new Point3dCollection { point.Location };
+                return new object[] { locations, point.RawDescription ?? string.Empty, false, false, true };
+            }
+
+            if (parameters.Length == 1 && parameters[0].ParameterType == typeof(Point3d))
+                return new object[] { point.Location };
+
+            return null;
+        }
+
+        private static ObjectId ExtractObjectIdFromAddResult(object value)
+        {
+            if (value is ObjectId id)
+                return id;
+
+            ObjectIdCollection ids = value as ObjectIdCollection;
+            if (ids != null && ids.Count > 0)
+                return ids[0];
+
+            System.Collections.IEnumerable enumerable = value as System.Collections.IEnumerable;
+            if (enumerable == null || value is string)
+                return ObjectId.Null;
+
+            try
+            {
+                foreach (object item in enumerable)
+                {
+                    if (item is ObjectId itemId)
+                        return itemId;
+                }
+            }
+            catch
+            {
+            }
+
+            return ObjectId.Null;
+        }
+
+        private static void ApplyCfbkCogoPointProperties(ObjectId id, CfbkCogoPointData point)
+        {
+            if (id.IsNull)
+                return;
+
+            Database db = id.Database;
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                DBObject obj = tr.GetObject(id, OpenMode.ForWrite, false);
+                if (obj != null)
+                {
+                    if (point.PointNumber.HasValue)
+                        TrySetLongProperty(obj, point.PointNumber.Value, "PointNumber", "Number");
+                    if (!string.IsNullOrWhiteSpace(point.PointName))
+                    {
+                        if (!TrySetStringProperty(obj, "PointName", point.PointName))
+                            TrySetStringProperty(obj, "Name", point.PointName);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(point.RawDescription))
+                    {
+                        if (!TrySetStringProperty(obj, "RawDescription", point.RawDescription))
+                            TrySetStringProperty(obj, "Description", point.RawDescription);
+                    }
+                }
+
+                tr.Commit();
+            }
+        }
+
+        private static string GetHandleText(ObjectId id)
+        {
+            try
+            {
+                if (id.IsNull || id.IsErased)
+                    return string.Empty;
+
+                using (Transaction tr = id.Database.TransactionManager.StartTransaction())
+                {
+                    DBObject obj = tr.GetObject(id, OpenMode.ForRead, false);
+                    string handle = obj?.Handle.ToString() ?? string.Empty;
+                    tr.Commit();
+                    return handle;
+                }
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
         private static HashSet<string> CollectCfbkCogoKeys(Database db)
         {
             HashSet<string> keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
+                List<ObjectId> civilPointIds = new List<ObjectId>();
+                AddCivilDocumentCogoPointIds(civilPointIds);
+                foreach (ObjectId id in civilPointIds)
+                {
+                    DBObject obj = GetDBObjectOrNull(tr, id);
+                    if (IsCogoPoint(obj))
+                        AddCfbkCogoKeys(keys, ReadCfbkCogoPointSignature(obj));
+                }
+
                 BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
                 BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForRead);
                 foreach (ObjectId id in modelSpace)
@@ -668,6 +866,19 @@ namespace DraftingSuite
             return signature;
         }
 
+        private static CfbkCogoPointData ReadCfbkCogoPointData(DBObject point)
+        {
+            Point3d? location = ReadCfbkCogoLocation(point);
+            if (!location.HasValue)
+                return null;
+
+            return new CfbkCogoPointData(
+                location.Value,
+                ReadCfbkCogoLong(point, "PointNumber", "Number"),
+                ReadCfbkCogoString(point, "PointName", "Name"),
+                ReadCfbkCogoString(point, "RawDescription", "Description", "FullDescription"));
+        }
+
         private static string ReadCfbkCogoString(object point, params string[] propertyNames)
         {
             foreach (string propertyName in propertyNames)
@@ -713,6 +924,26 @@ namespace DraftingSuite
                 try
                 {
                     return Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static long? ReadCfbkCogoLong(object point, params string[] propertyNames)
+        {
+            foreach (string propertyName in propertyNames)
+            {
+                object value = GetPropertyValue(point, propertyName);
+                if (value == null)
+                    continue;
+
+                try
+                {
+                    return Convert.ToInt64(value, CultureInfo.InvariantCulture);
                 }
                 catch
                 {
@@ -983,6 +1214,7 @@ namespace DraftingSuite
                 "Objects imported: " + result.ImportedEntityCount.ToString(CultureInfo.InvariantCulture),
                 "COGO points imported: " + result.ImportedCogoPointCount.ToString(CultureInfo.InvariantCulture),
                 "Duplicate COGO points skipped: " + result.DuplicateCogoPointCount.ToString(CultureInfo.InvariantCulture),
+                "COGO point import failures: " + result.CogoPointImportFailureCount.ToString(CultureInfo.InvariantCulture),
                 string.Empty,
                 "FILES"
             };
@@ -1000,6 +1232,8 @@ namespace DraftingSuite
                     detail += string.Format(CultureInfo.CurrentCulture, " ({0} imported, {1} skipped)", drawing.ImportedEntityCount, drawing.SkippedEntityCount);
                 if (drawing.ImportedCogoPointCount > 0 || drawing.DuplicateCogoPointCount > 0)
                     detail += string.Format(CultureInfo.CurrentCulture, " ({0} COGO imported, {1} COGO duplicates)", drawing.ImportedCogoPointCount, drawing.DuplicateCogoPointCount);
+                if (drawing.CogoPointImportFailureCount > 0)
+                    detail += " (" + drawing.CogoPointImportFailureCount.ToString(CultureInfo.InvariantCulture) + " COGO failed)";
                 if (drawing.DeletedPreviousEntityCount > 0)
                     detail += " (" + drawing.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture) + " previous erased)";
                 if (drawing.LastWriteUtc != DateTime.MinValue)
@@ -1093,6 +1327,7 @@ namespace DraftingSuite
             builder.AppendLine("Objects skipped: " + result.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("COGO points imported: " + result.ImportedCogoPointCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Duplicate COGO points skipped: " + result.DuplicateCogoPointCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("COGO point import failures: " + result.CogoPointImportFailureCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine();
 
             foreach (CfbkImportedDrawing drawing in result.Drawings)
@@ -1103,6 +1338,7 @@ namespace DraftingSuite
                 builder.AppendLine("  Objects skipped: " + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  COGO points imported: " + drawing.ImportedCogoPointCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  Duplicate COGO points skipped: " + drawing.DuplicateCogoPointCount.ToString(CultureInfo.InvariantCulture));
+                builder.AppendLine("  COGO point import failures: " + drawing.CogoPointImportFailureCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  Previous objects erased: " + drawing.DeletedPreviousEntityCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  Source file size: " + drawing.FileSizeBytes.ToString(CultureInfo.InvariantCulture));
                 if (drawing.LastWriteUtc != DateTime.MinValue)
@@ -2811,6 +3047,39 @@ namespace DraftingSuite
             return false;
         }
 
+        private static bool TrySetLongProperty(object target, long value, params string[] propertyNames)
+        {
+            if (target == null || propertyNames == null)
+                return false;
+
+            foreach (string propertyName in propertyNames)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null && property.CanWrite)
+                    {
+                        object converted = Convert.ChangeType(value, property.PropertyType, CultureInfo.InvariantCulture);
+                        property.SetValue(target, converted, null);
+                        return true;
+                    }
+
+                    FieldInfo field = target.GetType().GetField(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                    if (field != null)
+                    {
+                        object converted = Convert.ChangeType(value, field.FieldType, CultureInfo.InvariantCulture);
+                        field.SetValue(target, converted);
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
+        }
+
         private static bool TrySetPropertyValue(object target, string propertyName, object value)
         {
             if (target == null || string.IsNullOrWhiteSpace(propertyName) || value == null)
@@ -2978,6 +3247,7 @@ namespace DraftingSuite
             public int SkippedEntityCount => Drawings.Sum(drawing => drawing.SkippedEntityCount);
             public int ImportedCogoPointCount => Drawings.Sum(drawing => drawing.ImportedCogoPointCount);
             public int DuplicateCogoPointCount => Drawings.Sum(drawing => drawing.DuplicateCogoPointCount);
+            public int CogoPointImportFailureCount => Drawings.Sum(drawing => drawing.CogoPointImportFailureCount);
         }
 
         private sealed class CfbkImportedDrawing
@@ -2992,6 +3262,7 @@ namespace DraftingSuite
             public int SkippedEntityCount { get; set; }
             public int ImportedCogoPointCount { get; set; }
             public int DuplicateCogoPointCount { get; set; }
+            public int CogoPointImportFailureCount { get; set; }
             public string SkipReason { get; set; }
             public string ImportError { get; set; }
             public long FileSizeBytes { get; set; }
@@ -3063,6 +3334,22 @@ namespace DraftingSuite
         private sealed class CfbkCogoPointSignature
         {
             public HashSet<string> Keys { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private sealed class CfbkCogoPointData
+        {
+            public CfbkCogoPointData(Point3d location, long? pointNumber, string pointName, string rawDescription)
+            {
+                Location = location;
+                PointNumber = pointNumber;
+                PointName = pointName ?? string.Empty;
+                RawDescription = rawDescription ?? string.Empty;
+            }
+
+            public Point3d Location { get; }
+            public long? PointNumber { get; }
+            public string PointName { get; }
+            public string RawDescription { get; }
         }
 
         private sealed class FbkPrepResult
