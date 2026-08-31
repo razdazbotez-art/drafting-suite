@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.69";
+        private const string Version = "0.1.70";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -1408,6 +1408,8 @@ namespace DraftingSuite
                 entity is Polyline ||
                 entity is Polyline2d ||
                 entity is Polyline3d ||
+                entity is PolyFaceMesh ||
+                entity is PolygonMesh ||
                 entity is Arc ||
                 entity is Circle ||
                 entity is Spline ||
