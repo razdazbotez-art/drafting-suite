@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.58`
+Current version: `0.1.59`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -47,6 +47,6 @@ FBK Prep Config values are stored in `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSui
 
 ## CFBK
 
-`CFBK` combines already processed FBK drawings into the current working drawing. It asks for a folder and DWG filter, defaults to `*[Done].dwg`, opens each matching source drawing as a side database, and imports only allowed modelspace objects: linework, annotation, dimensions, mleaders, and normal block references.
+`CFBK` combines already processed FBK drawings into the current working drawing. It asks for a folder and DWG filter, defaults to `*.dwg`, opens each matching source drawing as a side database, and imports only allowed modelspace objects: linework, annotation, dimensions, mleaders, and normal block references.
 
-The source drawings are not modified. The command skips xref block references, raster images, PDF/DGN/DWF underlays, point clouds, Civil 3D COGO points, survey networks, and unsupported Civil/proxy objects. A run summary is written under `_CFBK_Logs`.
+The destination drawing stores remembered CFBK import records by normalized source path. Later runs skip matching files that were already imported into that drawing. The command inserts an `MText` import report in model space near the upper-left of the current view, listing the run time, source folder, filter, imported files, previously imported files, failed files, and ignored or filtered drawings. The source drawings are not modified. The command skips xref block references, raster images, PDF/DGN/DWF underlays, point clouds, Civil 3D COGO points, survey networks, and unsupported Civil/proxy objects. A run summary is written under `_CFBK_Logs`.

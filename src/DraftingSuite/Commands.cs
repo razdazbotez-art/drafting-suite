@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -29,7 +30,9 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.58";
+        private const string Version = "0.1.59";
+        private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
+        private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
         internal static string VersionText => Version;
 
@@ -128,31 +131,43 @@ namespace DraftingSuite
                     return;
                 }
 
-                List<string> sourceDrawings = FindCfbkSourceDrawings(sourceFolder, filter, doc.Database.Filename);
-                if (sourceDrawings.Count == 0)
+                CfbkSourcePlan sourcePlan = FindCfbkSourceDrawings(sourceFolder, filter, doc.Database.Filename);
+                if (sourcePlan.MatchingDrawings.Count == 0)
                 {
                     ed.WriteMessage("\nCFBK found no drawings matching {0}.", filter);
                     ed.WriteMessage("\n");
                     return;
                 }
 
-                if (!ConfirmCfbkRun(sourceFolder, filter, sourceDrawings.Count))
+                Dictionary<string, CfbkImportRecord> importRecords = ReadCfbkImportRecords(doc.Database);
+                if (!ConfirmCfbkRun(sourceFolder, filter, sourcePlan.MatchingDrawings.Count, importRecords.Count))
                 {
                     ed.WriteMessage("\nCFBK canceled.");
                     ed.WriteMessage("\n");
                     return;
                 }
 
-                CfbkRunResult result = CreateCfbkRunResult(sourceFolder);
+                CfbkRunResult result = CreateCfbkRunResult(sourceFolder, filter);
+                AddIgnoredCfbkDrawings(result, sourcePlan.IgnoredDrawings);
                 using (doc.LockDocument())
                 {
-                    foreach (string sourcePath in sourceDrawings)
+                    foreach (string sourcePath in sourcePlan.MatchingDrawings)
                     {
                         CfbkImportedDrawing drawing = new CfbkImportedDrawing(sourcePath);
                         result.Drawings.Add(drawing);
+                        CfbkImportRecord existingRecord;
+                        if (importRecords.TryGetValue(NormalizeCfbkPath(sourcePath), out existingRecord))
+                        {
+                            drawing.SkipReason = "Already imported";
+                            drawing.PreviousImportUtc = existingRecord.ImportedUtc;
+                            ed.WriteMessage("\n  Skipped {0}: already imported.", Path.GetFileName(sourcePath));
+                            continue;
+                        }
+
                         try
                         {
                             CloneAllowedModelSpaceFromDrawing(doc.Database, sourcePath, drawing);
+                            RegisterCfbkImport(doc.Database, drawing);
                             ed.WriteMessage(
                                 "\n  Imported {0}: {1} object(s), skipped {2}",
                                 Path.GetFileName(sourcePath),
@@ -165,13 +180,17 @@ namespace DraftingSuite
                             ed.WriteMessage("\n  Import failed for {0}: {1}", Path.GetFileName(sourcePath), ex.Message);
                         }
                     }
+
+                    InsertCfbkModelSpaceReport(doc.Database, ed, result);
                 }
 
                 WriteCfbkSummary(result);
                 ed.WriteMessage("\nCFBK complete.");
-                ed.WriteMessage("\n  Source drawings: {0}", sourceDrawings.Count);
+                ed.WriteMessage("\n  Matching source drawings: {0}", sourcePlan.MatchingDrawings.Count);
                 ed.WriteMessage("\n  Imported drawings: {0}", result.ImportedDrawingCount);
+                ed.WriteMessage("\n  Already imported: {0}", result.AlreadyImportedCount);
                 ed.WriteMessage("\n  Import failures: {0}", result.ImportFailureCount);
+                ed.WriteMessage("\n  Ignored or filtered drawings: {0}", result.IgnoredDrawingCount);
                 ed.WriteMessage("\n  Objects imported: {0}", result.ImportedEntityCount);
                 ed.WriteMessage("\n  Objects skipped: {0}", result.SkippedEntityCount);
                 ed.WriteMessage("\n  Log folder: {0}", result.LogFolder);
@@ -333,7 +352,7 @@ namespace DraftingSuite
 
         private static string PromptCfbkFilter(Editor ed)
         {
-            PromptStringOptions options = new PromptStringOptions("\nDWG file filter <*[Done].dwg>: ")
+            PromptStringOptions options = new PromptStringOptions("\nDWG file filter <*.dwg>: ")
             {
                 AllowSpaces = false
             };
@@ -343,35 +362,57 @@ namespace DraftingSuite
                 return null;
 
             string filter = (result.StringResult ?? string.Empty).Trim();
-            return string.IsNullOrWhiteSpace(filter) ? "*[Done].dwg" : filter;
+            return string.IsNullOrWhiteSpace(filter) ? "*.dwg" : filter;
         }
 
-        private static List<string> FindCfbkSourceDrawings(string sourceFolder, string filter, string activeDrawingPath)
+        private static CfbkSourcePlan FindCfbkSourceDrawings(string sourceFolder, string filter, string activeDrawingPath)
         {
+            CfbkSourcePlan plan = new CfbkSourcePlan();
             if (string.IsNullOrWhiteSpace(sourceFolder) || !Directory.Exists(sourceFolder))
-                return new List<string>();
+                return plan;
             if (string.IsNullOrWhiteSpace(filter))
-                filter = "*[Done].dwg";
+                filter = "*.dwg";
 
             string activeFullPath = string.IsNullOrWhiteSpace(activeDrawingPath)
                 ? string.Empty
                 : Path.GetFullPath(activeDrawingPath);
 
-            return Directory.GetFiles(sourceFolder, filter, SearchOption.TopDirectoryOnly)
-                .Where(path => !Path.GetFileName(path).StartsWith("~$", StringComparison.OrdinalIgnoreCase))
-                .Where(path => !string.Equals(Path.GetFullPath(path), activeFullPath, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            foreach (string path in Directory.GetFiles(sourceFolder, "*.dwg", SearchOption.TopDirectoryOnly).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                string fileName = Path.GetFileName(path);
+                if (fileName.StartsWith("~$", StringComparison.OrdinalIgnoreCase))
+                {
+                    plan.IgnoredDrawings.Add(new CfbkIgnoredDrawing(path, "Temporary DWG"));
+                    continue;
+                }
+
+                if (string.Equals(Path.GetFullPath(path), activeFullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    plan.IgnoredDrawings.Add(new CfbkIgnoredDrawing(path, "Active drawing"));
+                    continue;
+                }
+
+                if (!MatchesWildcard(fileName, filter))
+                {
+                    plan.IgnoredDrawings.Add(new CfbkIgnoredDrawing(path, "Filtered out"));
+                    continue;
+                }
+
+                plan.MatchingDrawings.Add(path);
+            }
+
+            return plan;
         }
 
-        private static bool ConfirmCfbkRun(string sourceFolder, string filter, int drawingCount)
+        private static bool ConfirmCfbkRun(string sourceFolder, string filter, int drawingCount, int priorImportCount)
         {
             string message = string.Format(
                 CultureInfo.CurrentCulture,
-                "CFBK will combine allowed CAD objects from {0} drawing(s).\n\nFolder:\n{1}\n\nFilter:\n{2}\n\nIt imports annotations, blocks, and linework. It skips xrefs, rasters, COGO points, survey networks, underlays, point clouds, and unsupported Civil objects. The source drawings will not be modified.",
+                "CFBK will combine allowed CAD objects from {0} matching drawing(s).\n\nFolder:\n{1}\n\nFilter:\n{2}\n\nThis drawing already has {3} remembered CFBK import record(s). Matching files already imported by path will be skipped.\n\nIt imports annotations, blocks, and linework. It skips xrefs, rasters, COGO points, survey networks, underlays, point clouds, and unsupported Civil objects. The source drawings will not be modified.",
                 drawingCount,
                 sourceFolder,
-                filter);
+                filter,
+                priorImportCount);
 
             return WinForms.MessageBox.Show(
                 message,
@@ -380,13 +421,23 @@ namespace DraftingSuite
                 WinForms.MessageBoxIcon.Question) == WinForms.DialogResult.OK;
         }
 
-        private static CfbkRunResult CreateCfbkRunResult(string sourceFolder)
+        private static CfbkRunResult CreateCfbkRunResult(string sourceFolder, string filter)
         {
             string runStamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
             string logFolder = Path.Combine(sourceFolder, "_CFBK_Logs", runStamp);
             Directory.CreateDirectory(logFolder);
 
-            return new CfbkRunResult { LogFolder = logFolder };
+            return new CfbkRunResult { LogFolder = logFolder, SourceFolder = sourceFolder, Filter = filter, StartedUtc = DateTime.UtcNow };
+        }
+
+        private static void AddIgnoredCfbkDrawings(CfbkRunResult result, IEnumerable<CfbkIgnoredDrawing> ignoredDrawings)
+        {
+            foreach (CfbkIgnoredDrawing ignored in ignoredDrawings)
+            {
+                CfbkImportedDrawing drawing = new CfbkImportedDrawing(ignored.SourcePath);
+                drawing.SkipReason = ignored.Reason;
+                result.Drawings.Add(drawing);
+            }
         }
 
         private static void CloneAllowedModelSpaceFromDrawing(Database destinationDb, string sourcePath, CfbkImportedDrawing result)
@@ -425,6 +476,261 @@ namespace DraftingSuite
 
                 result.ImportedEntityCount = sourceIds.Count;
             }
+        }
+
+        private static Dictionary<string, CfbkImportRecord> ReadCfbkImportRecords(Database db)
+        {
+            Dictionary<string, CfbkImportRecord> records = new Dictionary<string, CfbkImportRecord>(StringComparer.OrdinalIgnoreCase);
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                DBDictionary dictionary = GetCfbkDictionary(db, tr, false);
+                if (dictionary == null)
+                {
+                    tr.Commit();
+                    return records;
+                }
+
+                foreach (DBDictionaryEntry entry in dictionary)
+                {
+                    Xrecord record = tr.GetObject(entry.Value, OpenMode.ForRead, false) as Xrecord;
+                    CfbkImportRecord parsed = ParseCfbkImportRecord(record);
+                    if (parsed != null && !string.IsNullOrWhiteSpace(parsed.NormalizedPath))
+                        records[parsed.NormalizedPath] = parsed;
+                }
+
+                tr.Commit();
+            }
+
+            return records;
+        }
+
+        private static void RegisterCfbkImport(Database db, CfbkImportedDrawing drawing)
+        {
+            drawing.ImportedUtc = DateTime.UtcNow;
+            string normalizedPath = NormalizeCfbkPath(drawing.SourcePath);
+            string key = CreateCfbkImportKey(normalizedPath);
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                DBDictionary dictionary = GetCfbkDictionary(db, tr, true);
+                if (dictionary.Contains(key))
+                {
+                    Xrecord existing = tr.GetObject(dictionary.GetAt(key), OpenMode.ForWrite, false) as Xrecord;
+                    if (existing != null)
+                        existing.Data = CreateCfbkImportBuffer(drawing, normalizedPath);
+                }
+                else
+                {
+                    Xrecord record = new Xrecord { Data = CreateCfbkImportBuffer(drawing, normalizedPath) };
+                    dictionary.SetAt(key, record);
+                    tr.AddNewlyCreatedDBObject(record, true);
+                }
+
+                tr.Commit();
+            }
+        }
+
+        private static DBDictionary GetCfbkDictionary(Database db, Transaction tr, bool create)
+        {
+            DBDictionary nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, create ? OpenMode.ForWrite : OpenMode.ForRead);
+            if (nod.Contains(CfbkDictionaryName))
+                return tr.GetObject(nod.GetAt(CfbkDictionaryName), create ? OpenMode.ForWrite : OpenMode.ForRead, false) as DBDictionary;
+
+            if (!create)
+                return null;
+
+            DBDictionary dictionary = new DBDictionary();
+            nod.SetAt(CfbkDictionaryName, dictionary);
+            tr.AddNewlyCreatedDBObject(dictionary, true);
+            return dictionary;
+        }
+
+        private static ResultBuffer CreateCfbkImportBuffer(CfbkImportedDrawing drawing, string normalizedPath)
+        {
+            List<TypedValue> values = new List<TypedValue>
+            {
+                new TypedValue((int)DxfCode.Text, "schema=" + CfbkImportSchema),
+                new TypedValue((int)DxfCode.Text, "importedUtc=" + drawing.ImportedUtc.Value.ToString("o", CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "sourceFile=" + Path.GetFileName(drawing.SourcePath)),
+                new TypedValue((int)DxfCode.Text, "objectsImported=" + drawing.ImportedEntityCount.ToString(CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "objectsSkipped=" + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture))
+            };
+
+            int index = 0;
+            foreach (string chunk in ChunkCfbkText(normalizedPath, 220))
+            {
+                values.Add(new TypedValue((int)DxfCode.Text, "path" + index.ToString(CultureInfo.InvariantCulture) + "=" + chunk));
+                index++;
+            }
+
+            return new ResultBuffer(values.ToArray());
+        }
+
+        private static CfbkImportRecord ParseCfbkImportRecord(Xrecord record)
+        {
+            if (record?.Data == null)
+                return null;
+
+            Dictionary<int, string> pathChunks = new Dictionary<int, string>();
+            DateTime importedUtc = DateTime.MinValue;
+            bool hasSchema = false;
+            foreach (TypedValue value in record.Data)
+            {
+                string text = value.Value as string;
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                if (string.Equals(text, "schema=" + CfbkImportSchema, StringComparison.OrdinalIgnoreCase))
+                {
+                    hasSchema = true;
+                    continue;
+                }
+
+                if (text.StartsWith("importedUtc=", StringComparison.OrdinalIgnoreCase))
+                {
+                    DateTime parsed;
+                    if (DateTime.TryParse(text.Substring("importedUtc=".Length), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out parsed))
+                        importedUtc = parsed.ToUniversalTime();
+                    continue;
+                }
+
+                Match match = Regex.Match(text, "^path([0-9]+)=(.*)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                if (match.Success)
+                    pathChunks[int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)] = match.Groups[2].Value;
+            }
+
+            if (!hasSchema || pathChunks.Count == 0)
+                return null;
+
+            string normalizedPath = string.Concat(pathChunks.OrderBy(pair => pair.Key).Select(pair => pair.Value));
+            return new CfbkImportRecord(normalizedPath, importedUtc);
+        }
+
+        private static IEnumerable<string> ChunkCfbkText(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                yield return string.Empty;
+                yield break;
+            }
+
+            for (int offset = 0; offset < value.Length; offset += maxLength)
+                yield return value.Substring(offset, Math.Min(maxLength, value.Length - offset));
+        }
+
+        private static string NormalizeCfbkPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return string.Empty;
+
+            return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        private static string CreateCfbkImportKey(string normalizedPath)
+        {
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(normalizedPath.ToUpperInvariant()));
+                StringBuilder builder = new StringBuilder("P_", 66);
+                foreach (byte value in bytes)
+                    builder.Append(value.ToString("x2", CultureInfo.InvariantCulture));
+                return builder.ToString();
+            }
+        }
+
+        private static bool MatchesWildcard(string value, string pattern)
+        {
+            if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(pattern))
+                return false;
+
+            string regex = "^" + Regex.Escape(pattern.Trim()).Replace("\\*", ".*").Replace("\\?", ".") + "$";
+            return Regex.IsMatch(value, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+
+        private static void InsertCfbkModelSpaceReport(Database db, Editor ed, CfbkRunResult result)
+        {
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                BlockTable blockTable = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                BlockTableRecord modelSpace = (BlockTableRecord)tr.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+
+                double textHeight = db.Textsize > 0.0 ? db.Textsize : 2.5;
+                MText report = new MText
+                {
+                    Location = GetCfbkReportLocation(ed),
+                    TextHeight = textHeight,
+                    Width = textHeight * 140.0,
+                    Attachment = AttachmentPoint.TopLeft,
+                    Contents = BuildCfbkReportMText(result)
+                };
+
+                modelSpace.AppendEntity(report);
+                tr.AddNewlyCreatedDBObject(report, true);
+                tr.Commit();
+            }
+        }
+
+        private static Point3d GetCfbkReportLocation(Editor ed)
+        {
+            try
+            {
+                ViewTableRecord view = ed.GetCurrentView();
+                return new Point3d(
+                    view.CenterPoint.X - (view.Width * 0.45),
+                    view.CenterPoint.Y + (view.Height * 0.45),
+                    0.0);
+            }
+            catch
+            {
+                return Point3d.Origin;
+            }
+        }
+
+        private static string BuildCfbkReportMText(CfbkRunResult result)
+        {
+            List<string> lines = new List<string>
+            {
+                "CFBK IMPORT REPORT",
+                "Run: " + result.StartedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture),
+                "Source folder: " + result.SourceFolder,
+                "Filter: " + result.Filter,
+                "Imported drawings: " + result.ImportedDrawingCount.ToString(CultureInfo.InvariantCulture),
+                "Already imported: " + result.AlreadyImportedCount.ToString(CultureInfo.InvariantCulture),
+                "Import failures: " + result.ImportFailureCount.ToString(CultureInfo.InvariantCulture),
+                "Ignored or filtered drawings: " + result.IgnoredDrawingCount.ToString(CultureInfo.InvariantCulture),
+                "Objects imported: " + result.ImportedEntityCount.ToString(CultureInfo.InvariantCulture),
+                string.Empty,
+                "FILES"
+            };
+
+            foreach (CfbkImportedDrawing drawing in result.Drawings.OrderBy(drawing => drawing.SourcePath, StringComparer.OrdinalIgnoreCase))
+            {
+                string status = drawing.StatusText;
+                string detail = string.Format(
+                    CultureInfo.CurrentCulture,
+                    "{0} - {1}",
+                    status,
+                    drawing.SourcePath);
+
+                if (drawing.ImportedEntityCount > 0 || drawing.SkippedEntityCount > 0)
+                    detail += string.Format(CultureInfo.CurrentCulture, " ({0} imported, {1} skipped)", drawing.ImportedEntityCount, drawing.SkippedEntityCount);
+                if (drawing.PreviousImportUtc.HasValue)
+                    detail += " (previous import " + drawing.PreviousImportUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture) + ")";
+                if (!string.IsNullOrWhiteSpace(drawing.ImportError))
+                    detail += " (error: " + drawing.ImportError + ")";
+
+                lines.Add(detail);
+            }
+
+            return string.Join("\\P", lines.Select(EscapeMText));
+        }
+
+        private static string EscapeMText(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("{", "\\{")
+                .Replace("}", "\\}");
         }
 
         private static bool IsAllowedCfbkEntity(Transaction tr, ObjectId id)
@@ -481,10 +787,14 @@ namespace DraftingSuite
             StringBuilder builder = new StringBuilder();
             builder.AppendLine("CFBK Summary");
             builder.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture));
+            builder.AppendLine("Source folder: " + result.SourceFolder);
+            builder.AppendLine("Filter: " + result.Filter);
             builder.AppendLine("Log folder: " + result.LogFolder);
             builder.AppendLine("Source drawings: " + result.Drawings.Count.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Imported drawings: " + result.ImportedDrawingCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Already imported: " + result.AlreadyImportedCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Import failures: " + result.ImportFailureCount.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine("Ignored or filtered drawings: " + result.IgnoredDrawingCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Objects imported: " + result.ImportedEntityCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine("Objects skipped: " + result.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
             builder.AppendLine();
@@ -492,8 +802,15 @@ namespace DraftingSuite
             foreach (CfbkImportedDrawing drawing in result.Drawings)
             {
                 builder.AppendLine("Source: " + drawing.SourcePath);
+                builder.AppendLine("  Status: " + drawing.StatusText);
                 builder.AppendLine("  Objects imported: " + drawing.ImportedEntityCount.ToString(CultureInfo.InvariantCulture));
                 builder.AppendLine("  Objects skipped: " + drawing.SkippedEntityCount.ToString(CultureInfo.InvariantCulture));
+                if (drawing.ImportedUtc.HasValue)
+                    builder.AppendLine("  Imported UTC: " + drawing.ImportedUtc.Value.ToString("o", CultureInfo.InvariantCulture));
+                if (drawing.PreviousImportUtc.HasValue)
+                    builder.AppendLine("  Previous import UTC: " + drawing.PreviousImportUtc.Value.ToString("o", CultureInfo.InvariantCulture));
+                if (!string.IsNullOrWhiteSpace(drawing.SkipReason))
+                    builder.AppendLine("  Skip reason: " + drawing.SkipReason);
                 if (!string.IsNullOrWhiteSpace(drawing.ImportError))
                     builder.AppendLine("  Import error: " + drawing.ImportError);
             }
@@ -2340,9 +2657,14 @@ namespace DraftingSuite
         private sealed class CfbkRunResult
         {
             public string LogFolder { get; set; }
+            public string SourceFolder { get; set; }
+            public string Filter { get; set; }
+            public DateTime StartedUtc { get; set; }
             public List<CfbkImportedDrawing> Drawings { get; } = new List<CfbkImportedDrawing>();
-            public int ImportedDrawingCount => Drawings.Count(drawing => string.IsNullOrWhiteSpace(drawing.ImportError));
+            public int ImportedDrawingCount => Drawings.Count(drawing => drawing.ImportedUtc.HasValue && string.IsNullOrWhiteSpace(drawing.ImportError));
+            public int AlreadyImportedCount => Drawings.Count(drawing => string.Equals(drawing.SkipReason, "Already imported", StringComparison.OrdinalIgnoreCase));
             public int ImportFailureCount => Drawings.Count(drawing => !string.IsNullOrWhiteSpace(drawing.ImportError));
+            public int IgnoredDrawingCount => Drawings.Count(drawing => !string.IsNullOrWhiteSpace(drawing.SkipReason) && !string.Equals(drawing.SkipReason, "Already imported", StringComparison.OrdinalIgnoreCase));
             public int ImportedEntityCount => Drawings.Sum(drawing => drawing.ImportedEntityCount);
             public int SkippedEntityCount => Drawings.Sum(drawing => drawing.SkippedEntityCount);
         }
@@ -2357,7 +2679,54 @@ namespace DraftingSuite
             public string SourcePath { get; }
             public int ImportedEntityCount { get; set; }
             public int SkippedEntityCount { get; set; }
+            public string SkipReason { get; set; }
             public string ImportError { get; set; }
+            public DateTime? ImportedUtc { get; set; }
+            public DateTime? PreviousImportUtc { get; set; }
+
+            public string StatusText
+            {
+                get
+                {
+                    if (!string.IsNullOrWhiteSpace(ImportError))
+                        return "Failed";
+                    if (!string.IsNullOrWhiteSpace(SkipReason))
+                        return SkipReason;
+                    if (ImportedUtc.HasValue)
+                        return "Imported";
+                    return "Pending";
+                }
+            }
+        }
+
+        private sealed class CfbkIgnoredDrawing
+        {
+            public CfbkIgnoredDrawing(string sourcePath, string reason)
+            {
+                SourcePath = sourcePath;
+                Reason = reason;
+            }
+
+            public string SourcePath { get; }
+            public string Reason { get; }
+        }
+
+        private sealed class CfbkSourcePlan
+        {
+            public List<string> MatchingDrawings { get; } = new List<string>();
+            public List<CfbkIgnoredDrawing> IgnoredDrawings { get; } = new List<CfbkIgnoredDrawing>();
+        }
+
+        private sealed class CfbkImportRecord
+        {
+            public CfbkImportRecord(string normalizedPath, DateTime importedUtc)
+            {
+                NormalizedPath = normalizedPath;
+                ImportedUtc = importedUtc;
+            }
+
+            public string NormalizedPath { get; }
+            public DateTime ImportedUtc { get; }
         }
 
         private sealed class FbkPrepResult
