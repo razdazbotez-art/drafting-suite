@@ -30,7 +30,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.65";
+        private const string Version = "0.1.66";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
 
@@ -511,6 +511,7 @@ namespace DraftingSuite
                             {
                                 result.DuplicateCogoPointCount++;
                                 result.SkippedEntityCount++;
+                                AddCfbkSkippedObjectType(result, "Duplicate COGO point");
                                 continue;
                             }
 
@@ -519,6 +520,7 @@ namespace DraftingSuite
                             {
                                 result.CogoPointImportFailureCount++;
                                 result.SkippedEntityCount++;
+                                AddCfbkSkippedObjectType(result, "Unreadable COGO point");
                                 continue;
                             }
 
@@ -530,7 +532,10 @@ namespace DraftingSuite
                         if (IsAllowedCfbkEntity(tr, id))
                             sourceIds.Add(id);
                         else
+                        {
                             result.SkippedEntityCount++;
+                            AddCfbkSkippedObjectType(result, ClassifyCfbkSkippedObject(tr, obj));
+                        }
                     }
 
                     tr.Commit();
@@ -794,6 +799,74 @@ namespace DraftingSuite
             {
                 return string.Empty;
             }
+        }
+
+        private static void AddCfbkSkippedObjectType(CfbkImportedDrawing result, string objectType)
+        {
+            string key = string.IsNullOrWhiteSpace(objectType) ? "Unknown object" : objectType.Trim();
+            int count;
+            result.SkippedObjectTypes.TryGetValue(key, out count);
+            result.SkippedObjectTypes[key] = count + 1;
+        }
+
+        private static string ClassifyCfbkSkippedObject(Transaction tr, DBObject obj)
+        {
+            if (obj == null)
+                return "Unreadable object";
+
+            if (IsCogoPoint(obj))
+                return "COGO point";
+
+            if (IsSurveyNetwork(obj))
+                return "Survey network object";
+
+            Entity entity = obj as Entity;
+            if (entity == null)
+                return GetCfbkObjectTypeName(obj);
+
+            BlockReference block = entity as BlockReference;
+            if (block != null && IsXrefBlockReference(tr, block))
+                return "Xref or overlay block reference";
+
+            string typeName = GetCfbkObjectTypeName(entity);
+            if (IsLikelyCfbkObjectType(typeName, "RASTER"))
+                return "Raster image";
+            if (IsLikelyCfbkObjectType(typeName, "UNDERLAY") || IsLikelyCfbkObjectType(typeName, "PDF") || IsLikelyCfbkObjectType(typeName, "DGN") || IsLikelyCfbkObjectType(typeName, "DWF"))
+                return "Underlay";
+            if (IsLikelyCfbkObjectType(typeName, "POINTCLOUD") || IsLikelyCfbkObjectType(typeName, "POINT CLOUD"))
+                return "Point cloud";
+            if (IsLikelyCfbkObjectType(typeName, "PROXY"))
+                return "Proxy object";
+            if (IsLikelyCfbkObjectType(typeName, "AECC"))
+                return "Unsupported Civil object";
+
+            return typeName;
+        }
+
+        private static bool IsLikelyCfbkObjectType(string typeName, string token)
+        {
+            return !string.IsNullOrWhiteSpace(typeName) &&
+                   typeName.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string GetCfbkObjectTypeName(DBObject obj)
+        {
+            try
+            {
+                RXClass rx = obj.GetRXClass();
+                string dxfName = rx?.DxfName ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(dxfName))
+                    return dxfName;
+
+                string rxName = rx?.Name ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(rxName))
+                    return rxName;
+            }
+            catch
+            {
+            }
+
+            return obj.GetType().Name ?? "Unknown object";
         }
 
         private static HashSet<string> CollectCfbkCogoKeys(Database db)
@@ -1413,6 +1486,12 @@ namespace DraftingSuite
                     builder.AppendLine("  Skip reason: " + drawing.SkipReason);
                 if (!string.IsNullOrWhiteSpace(drawing.ImportError))
                     builder.AppendLine("  Import error: " + drawing.ImportError);
+                if (drawing.SkippedObjectTypes.Count > 0)
+                {
+                    builder.AppendLine("  Skipped object types:");
+                    foreach (KeyValuePair<string, int> pair in drawing.SkippedObjectTypes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+                        builder.AppendLine("    " + pair.Key + ": " + pair.Value.ToString(CultureInfo.InvariantCulture));
+                }
             }
 
             File.WriteAllText(summaryPath, builder.ToString(), Encoding.UTF8);
@@ -3334,6 +3413,7 @@ namespace DraftingSuite
             public bool WasReimported { get; set; }
             public int DeletedPreviousEntityCount { get; set; }
             public List<string> DestinationHandles { get; } = new List<string>();
+            public Dictionary<string, int> SkippedObjectTypes { get; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             public string StatusText
             {
