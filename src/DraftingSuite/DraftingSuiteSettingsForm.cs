@@ -263,6 +263,7 @@ namespace DraftingSuite
             {
                 "DSFBKPREP",
                 "DSFBKCONFIG",
+                "DSGRID",
                 "DSMT2ML",
                 "DSDELETETINY",
                 "DSFLATTEN",

@@ -389,6 +389,7 @@ namespace DraftingSuite
                 new CommandPadButtonSetting("Combine FBKs", "CFBK", "Combine allowed CAD objects from processed FBK drawings in a folder.", true),
                 new CommandPadButtonSetting("FBK Prep", "DSFBKPREP", "Prepare the opened FBK drawing using the active FBK Prep preset.", true),
                 new CommandPadButtonSetting("FBK Prep Config", "DSFBKCONFIG", "Open FBK Prep configuration and presets.", true),
+                new CommandPadButtonSetting("Scan Grid", "DSGRID", "Create a clipped scan spacing grid inside a selected closed polyline.", true),
                 new CommandPadButtonSetting("Text to MLeader", "DSMT2ML", "Convert selected text or mtext to mleaders using the current MLeader style with a 15 drawing-unit text offset.", true),
                 new CommandPadButtonSetting("Delete Small Text", "DSDELETETINY", "Delete selected text or mtext below the configured small text height.", true),
                 new CommandPadButtonSetting("Flatten to 0", "DSFLATTEN", "Move selected drafting annotation to elevation 0.", true),
@@ -404,7 +405,7 @@ namespace DraftingSuite
                 ? CreateDefaultCommandPadButtons()
                 : buttons;
 
-            return source
+            List<CommandPadButtonSetting> normalized = source
                 .Where(button => button != null)
                 .Select(button => new CommandPadButtonSetting(
                     NormalizePadLabel(button.Label, button.Command),
@@ -413,6 +414,17 @@ namespace DraftingSuite
                     button.Visible))
                 .Where(button => !string.IsNullOrWhiteSpace(button.Command))
                 .ToList();
+
+            foreach (CommandPadButtonSetting defaultButton in CreateDefaultCommandPadButtons())
+            {
+                string defaultCommand = NormalizeCommandName(defaultButton.Command);
+                if (!normalized.Any(button => string.Equals(button.Command, defaultCommand, StringComparison.OrdinalIgnoreCase)))
+                {
+                    normalized.Add(defaultButton);
+                }
+            }
+
+            return normalized;
         }
 
         internal static string NormalizeCommandName(string command)
@@ -460,6 +472,12 @@ namespace DraftingSuite
                 return "COGO to Standard";
             }
 
+            if (string.Equals(cleanCommand, "DSGRID", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "Grid", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Scan Grid";
+            }
+
             return string.IsNullOrWhiteSpace(cleanLabel) ? cleanCommand : cleanLabel;
         }
 
@@ -499,6 +517,12 @@ namespace DraftingSuite
                  (description ?? string.Empty).IndexOf("configured point and label styles", StringComparison.OrdinalIgnoreCase) >= 0))
             {
                 return "Set selected COGO points to Standard point and label styles.";
+            }
+
+            if (string.Equals(cleanCommand, "DSGRID", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(description))
+            {
+                return "Create a clipped scan spacing grid inside a selected closed polyline.";
             }
 
             return description ?? string.Empty;

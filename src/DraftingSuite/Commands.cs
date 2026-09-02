@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
+using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
@@ -30,9 +31,10 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.70";
+        private const string Version = "0.1.72";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
+        private const string ScanGridLayerName = "0_grid";
 
         internal static string VersionText => Version;
 
@@ -329,12 +331,85 @@ namespace DraftingSuite
                 });
         }
 
+        [CommandMethod("DSGRID", CommandFlags.Modal)]
+        public void CreateScanGrid()
+        {
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Editor ed = doc?.Editor;
+            if (doc == null || ed == null)
+                return;
+
+            try
+            {
+                PromptEntityOptions boundaryOptions = new PromptEntityOptions("\nSelect closed grid boundary polyline: ");
+                boundaryOptions.SetRejectMessage("\nSelect a lightweight closed polyline.");
+                boundaryOptions.AddAllowedClass(typeof(Polyline), false);
+                PromptEntityResult boundaryResult = ed.GetEntity(boundaryOptions);
+                if (boundaryResult.Status != PromptStatus.OK)
+                    return;
+
+                double spacing = PromptScanGridSpacing(ed);
+                if (spacing <= 0.0)
+                    return;
+
+                short colorIndex = PromptScanGridColor(ed);
+                if (colorIndex <= 0)
+                    return;
+
+                double rotation = PromptScanGridRotation(ed);
+                if (double.IsNaN(rotation))
+                    return;
+
+                using (doc.LockDocument())
+                using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    Polyline boundary = tr.GetObject(boundaryResult.ObjectId, OpenMode.ForRead, false) as Polyline;
+                    if (boundary == null)
+                    {
+                        ed.WriteMessage("\nScan grid canceled: selected object is not a lightweight polyline.");
+                        return;
+                    }
+
+                    ScanGridBoundary gridBoundary = ReadScanGridBoundary(boundary);
+                    ObjectId layerId = EnsureScanGridLayer(doc.Database, tr, colorIndex);
+                    List<ScanGridSegment> segments = BuildScanGridSegments(gridBoundary.Points, spacing, rotation);
+
+                    BlockTableRecord currentSpace = (BlockTableRecord)tr.GetObject(doc.Database.CurrentSpaceId, OpenMode.ForWrite);
+                    foreach (ScanGridSegment segment in segments)
+                    {
+                        Polyline line = new Polyline(2);
+                        line.SetDatabaseDefaults();
+                        line.LayerId = layerId;
+                        line.ColorIndex = 256;
+                        line.Linetype = "ByLayer";
+                        line.Elevation = gridBoundary.Elevation;
+                        line.AddVertexAt(0, segment.Start, 0.0, 0.0, 0.0);
+                        line.AddVertexAt(1, segment.End, 0.0, 0.0, 0.0);
+                        currentSpace.AppendEntity(line);
+                        tr.AddNewlyCreatedDBObject(line, true);
+                    }
+
+                    tr.Commit();
+                    ed.WriteMessage("\nScan grid complete.");
+                    ed.WriteMessage("\n  Layer: {0}", ScanGridLayerName);
+                    ed.WriteMessage("\n  Spacing: {0}", spacing.ToString("0.###", CultureInfo.InvariantCulture));
+                    ed.WriteMessage("\n  Segments created: {0}", segments.Count);
+                    ed.WriteMessage("\n");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                ed.WriteMessage("\nScan grid failed: {0}", ex.Message);
+                ed.WriteMessage("\n");
+            }
+        }
+
         internal static void PrintLoadMessage(Editor ed)
         {
             if (ed == null)
                 return;
 
-            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, CFBK, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
+            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, CFBK, DSGRID, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
             ed.WriteMessage("\n");
         }
 
@@ -354,6 +429,236 @@ namespace DraftingSuite
             settings.FlattenSkipBlockNamePatterns = new List<string>();
             settings.InvertKeepTextLayerPatterns = false;
             return settings;
+        }
+
+        private static double PromptScanGridSpacing(Editor ed)
+        {
+            PromptStringOptions options = new PromptStringOptions("\nGrid spacing [10/15/20/25/50] <10>: ")
+            {
+                AllowSpaces = false,
+                DefaultValue = "10",
+                UseDefaultValue = true
+            };
+
+            PromptResult result = ed.GetString(options);
+            if (result.Status == PromptStatus.Cancel)
+                return -1.0;
+
+            string text = string.IsNullOrWhiteSpace(result.StringResult) ? "10" : result.StringResult.Trim();
+            double spacing;
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) ||
+                !IsAllowedScanGridSpacing(spacing))
+            {
+                ed.WriteMessage("\nSpacing must be 10, 15, 20, 25, or 50.");
+                return -1.0;
+            }
+
+            return spacing;
+        }
+
+        private static bool IsAllowedScanGridSpacing(double spacing)
+        {
+            return Math.Abs(spacing - 10.0) < 1e-8 ||
+                   Math.Abs(spacing - 15.0) < 1e-8 ||
+                   Math.Abs(spacing - 20.0) < 1e-8 ||
+                   Math.Abs(spacing - 25.0) < 1e-8 ||
+                   Math.Abs(spacing - 50.0) < 1e-8;
+        }
+
+        private static short PromptScanGridColor(Editor ed)
+        {
+            PromptKeywordOptions options = new PromptKeywordOptions("\nGrid color [White/Cyan/Red/Gray/Magenta] <White>: ");
+            options.AllowNone = true;
+            options.Keywords.Add("White");
+            options.Keywords.Add("Cyan");
+            options.Keywords.Add("Red");
+            options.Keywords.Add("Gray");
+            options.Keywords.Add("Magenta");
+            options.Keywords.Default = "White";
+
+            PromptResult result = ed.GetKeywords(options);
+            if (result.Status == PromptStatus.Cancel)
+                return -1;
+
+            string color = string.IsNullOrWhiteSpace(result.StringResult) ? "White" : result.StringResult;
+            if (string.Equals(color, "Cyan", StringComparison.OrdinalIgnoreCase))
+                return 4;
+            if (string.Equals(color, "Red", StringComparison.OrdinalIgnoreCase))
+                return 1;
+            if (string.Equals(color, "Gray", StringComparison.OrdinalIgnoreCase))
+                return 8;
+            if (string.Equals(color, "Magenta", StringComparison.OrdinalIgnoreCase))
+                return 6;
+            return 7;
+        }
+
+        private static double PromptScanGridRotation(Editor ed)
+        {
+            PromptAngleOptions options = new PromptAngleOptions("\nGrid rotation angle <0>: ")
+            {
+                AllowNone = true,
+                DefaultValue = 0.0,
+                UseDefaultValue = true
+            };
+
+            PromptDoubleResult result = ed.GetAngle(options);
+            if (result.Status == PromptStatus.Cancel)
+                return double.NaN;
+
+            return result.Value;
+        }
+
+        private static ObjectId EnsureScanGridLayer(Database db, Transaction tr, short colorIndex)
+        {
+            LayerTable layerTable = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
+            ObjectId layerId;
+            if (layerTable.Has(ScanGridLayerName))
+            {
+                layerId = layerTable[ScanGridLayerName];
+                LayerTableRecord existing = (LayerTableRecord)tr.GetObject(layerId, OpenMode.ForWrite);
+                existing.Color = Color.FromColorIndex(ColorMethod.ByAci, colorIndex);
+                existing.LinetypeObjectId = GetContinuousLinetypeId(db, tr);
+                return layerId;
+            }
+
+            layerTable.UpgradeOpen();
+            LayerTableRecord layer = new LayerTableRecord
+            {
+                Name = ScanGridLayerName,
+                Color = Color.FromColorIndex(ColorMethod.ByAci, colorIndex),
+                LinetypeObjectId = GetContinuousLinetypeId(db, tr)
+            };
+            layerId = layerTable.Add(layer);
+            tr.AddNewlyCreatedDBObject(layer, true);
+            return layerId;
+        }
+
+        private static ObjectId GetContinuousLinetypeId(Database db, Transaction tr)
+        {
+            LinetypeTable linetypeTable = (LinetypeTable)tr.GetObject(db.LinetypeTableId, OpenMode.ForRead);
+            return linetypeTable.Has("Continuous") ? linetypeTable["Continuous"] : db.ContinuousLinetype;
+        }
+
+        private static ScanGridBoundary ReadScanGridBoundary(Polyline boundary)
+        {
+            if (!boundary.Closed)
+                throw new InvalidOperationException("Boundary polyline must be closed.");
+            if (boundary.NumberOfVertices < 3)
+                throw new InvalidOperationException("Boundary polyline needs at least three vertices.");
+
+            List<Point2d> points = new List<Point2d>();
+            for (int i = 0; i < boundary.NumberOfVertices; i++)
+            {
+                if (Math.Abs(boundary.GetBulgeAt(i)) > 1e-10)
+                    throw new InvalidOperationException("Arc segments are not supported yet. Use a straight-segment closed polyline.");
+
+                points.Add(boundary.GetPoint2dAt(i));
+            }
+
+            return new ScanGridBoundary(points, boundary.Elevation);
+        }
+
+        private static List<ScanGridSegment> BuildScanGridSegments(List<Point2d> worldPoints, double spacing, double rotation)
+        {
+            double cos = Math.Cos(rotation);
+            double sin = Math.Sin(rotation);
+            List<Point2d> localPoints = worldPoints
+                .Select(point => WorldToScanGridLocal(point, cos, sin))
+                .ToList();
+
+            double minX = localPoints.Min(point => point.X);
+            double maxX = localPoints.Max(point => point.X);
+            double minY = localPoints.Min(point => point.Y);
+            double maxY = localPoints.Max(point => point.Y);
+
+            List<ScanGridSegment> segments = new List<ScanGridSegment>();
+            double startX = Math.Floor(minX / spacing) * spacing;
+            double endX = Math.Ceiling(maxX / spacing) * spacing;
+            for (double x = startX; x <= endX + 1e-8; x += spacing)
+                AddScanGridSegmentsForVerticalLine(segments, localPoints, x, cos, sin, spacing);
+
+            double startY = Math.Floor(minY / spacing) * spacing;
+            double endY = Math.Ceiling(maxY / spacing) * spacing;
+            for (double y = startY; y <= endY + 1e-8; y += spacing)
+                AddScanGridSegmentsForHorizontalLine(segments, localPoints, y, cos, sin, spacing);
+
+            return segments;
+        }
+
+        private static void AddScanGridSegmentsForVerticalLine(List<ScanGridSegment> segments, List<Point2d> polygon, double x, double cos, double sin, double spacing)
+        {
+            List<double> intersections = new List<double>();
+            const double epsilon = 1e-8;
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                Point2d a = polygon[i];
+                Point2d b = polygon[(i + 1) % polygon.Count];
+                double dx = b.X - a.X;
+                if (Math.Abs(dx) < epsilon)
+                    continue;
+
+                if ((a.X <= x && b.X > x) || (b.X <= x && a.X > x))
+                {
+                    double t = (x - a.X) / dx;
+                    intersections.Add(a.Y + (b.Y - a.Y) * t);
+                }
+            }
+
+            AddPairedScanGridSegments(segments, intersections, true, x, cos, sin, spacing);
+        }
+
+        private static void AddScanGridSegmentsForHorizontalLine(List<ScanGridSegment> segments, List<Point2d> polygon, double y, double cos, double sin, double spacing)
+        {
+            List<double> intersections = new List<double>();
+            const double epsilon = 1e-8;
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                Point2d a = polygon[i];
+                Point2d b = polygon[(i + 1) % polygon.Count];
+                double dy = b.Y - a.Y;
+                if (Math.Abs(dy) < epsilon)
+                    continue;
+
+                if ((a.Y <= y && b.Y > y) || (b.Y <= y && a.Y > y))
+                {
+                    double t = (y - a.Y) / dy;
+                    intersections.Add(a.X + (b.X - a.X) * t);
+                }
+            }
+
+            AddPairedScanGridSegments(segments, intersections, false, y, cos, sin, spacing);
+        }
+
+        private static void AddPairedScanGridSegments(List<ScanGridSegment> segments, List<double> intersections, bool vertical, double fixedCoordinate, double cos, double sin, double spacing)
+        {
+            intersections.Sort();
+            for (int i = 0; i + 1 < intersections.Count; i += 2)
+            {
+                double start = intersections[i];
+                double end = intersections[i + 1];
+                if (Math.Abs(end - start) < Math.Max(1e-7, spacing * 1e-7))
+                    continue;
+
+                Point2d localStart = vertical ? new Point2d(fixedCoordinate, start) : new Point2d(start, fixedCoordinate);
+                Point2d localEnd = vertical ? new Point2d(fixedCoordinate, end) : new Point2d(end, fixedCoordinate);
+                segments.Add(new ScanGridSegment(
+                    ScanGridLocalToWorld(localStart, cos, sin),
+                    ScanGridLocalToWorld(localEnd, cos, sin)));
+            }
+        }
+
+        private static Point2d WorldToScanGridLocal(Point2d point, double cos, double sin)
+        {
+            return new Point2d(
+                point.X * cos + point.Y * sin,
+                -point.X * sin + point.Y * cos);
+        }
+
+        private static Point2d ScanGridLocalToWorld(Point2d point, double cos, double sin)
+        {
+            return new Point2d(
+                point.X * cos - point.Y * sin,
+                point.X * sin + point.Y * cos);
         }
 
         private static string PromptCfbkSourceFolder(Document doc)
@@ -3505,6 +3810,30 @@ namespace DraftingSuite
             public long? PointNumber { get; }
             public string PointName { get; }
             public string RawDescription { get; }
+        }
+
+        private sealed class ScanGridBoundary
+        {
+            public ScanGridBoundary(List<Point2d> points, double elevation)
+            {
+                Points = points;
+                Elevation = elevation;
+            }
+
+            public List<Point2d> Points { get; }
+            public double Elevation { get; }
+        }
+
+        private sealed class ScanGridSegment
+        {
+            public ScanGridSegment(Point2d start, Point2d end)
+            {
+                Start = start;
+                End = end;
+            }
+
+            public Point2d Start { get; }
+            public Point2d End { get; }
         }
 
         private sealed class FbkPrepResult

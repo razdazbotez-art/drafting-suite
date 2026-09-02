@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.70`
+Current version: `0.1.72`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -10,6 +10,7 @@ New installs start with the built-in `Typical` preset.
 
 - `DS` opens the tabbed Drafting Suite palette. The default Pad tab is a compact command pad; shared version and command information lives on the Help tab.
 - `CFBK` combines allowed CAD objects from processed FBK drawings in a selected folder into the active drawing.
+- `DSGRID` creates a scan spacing grid on `0_grid` inside a selected closed polyline.
 - `DSFBKPREP` prepares an opened fieldbook drawing for drafting.
 - `DSFBKCONFIG` opens the modeless FBK Prep Config window.
 - `DSMT2ML` converts selected text or mtext to mleaders using the drawing's current MLeader style when available.
@@ -50,3 +51,9 @@ FBK Prep Config values are stored in `%LOCALAPPDATA%\Civil3D_Plugins\DraftingSui
 `CFBK` combines already processed FBK drawings into the current working drawing. It asks for a folder and DWG filter, defaults to `*.dwg`, opens each matching source drawing as a side database, and imports only allowed modelspace objects: linework, polyface meshes, polygon meshes, hatches, solids, faces, traces, regions, wipeouts, rays, xlines, AutoCAD points, annotation, leaders, mleaders, dimensions, tables, and normal block references.
 
 The destination drawing stores remembered CFBK import records by normalized source path. Each record includes the source file size, source last modified time, import time, and the handles of objects cloned or created from that file. Later runs skip matching files when the file size and last modified time have not changed. If a source file changed, CFBK erases the objects it previously imported from that file, imports the changed file again, and replaces the stored record. COGO point import is optional and defaults off; when enabled, CFBK creates new Civil 3D COGO points in the active drawing through the active Civil document point collection and skips duplicates by point number, point name, or rounded XYZ location, so repeated control points from multiple FBK drawings are not overwritten. The command inserts a 20x-scaled left-justified `MText` import report in model space after import, places it 500 feet east of the overall imported FBK extents when extents are available, and falls back to the upper-right of the current view when no imported extents can be read. The report lists the run time, source folder, filter, imported files, reimported files, unchanged files, failed files, ignored or filtered drawings, and COGO duplicate counts. The source drawings are not modified. The command skips xref block references, raster images, PDF/DGN/DWF underlays, point clouds, survey networks, and unsupported Civil/proxy objects. The `_CFBK_Logs` summary includes the detailed skipped object type breakdown per source drawing.
+
+## Scan Grid
+
+`DSGRID` asks for a closed lightweight polyline boundary, spacing, color, and rotation angle. It creates straight lightweight polyline grid segments clipped inside the selected boundary on layer `0_grid`, with layer color set to white, cyan, red, gray, or magenta and linetype set to Continuous.
+
+Supported spacing values are `10`, `15`, `20`, `25`, and `50` drawing units. Straight-segment closed polylines are supported, including concave boundaries such as T-shaped or cross-shaped roadway intersection areas. Arc bulges are rejected for now so curved boundaries are not approximated silently.
