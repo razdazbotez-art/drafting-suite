@@ -1566,7 +1566,7 @@ namespace DraftingSuite
 
         private static FbkPrepScope PromptScope(Editor ed)
         {
-            PromptKeywordOptions options = new PromptKeywordOptions("\nFBK Prep scope [Entire drawing/Selection] <Entire>: ");
+            PromptKeywordOptions options = new PromptKeywordOptions("\nFBK Prep scope [Entire drawing/Selection]: ");
             options.Keywords.Add("Entire");
             options.Keywords.Add("Selection");
             options.Keywords.Default = "Entire";
