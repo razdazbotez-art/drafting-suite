@@ -31,7 +31,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.72";
+        private const string Version = "0.1.73";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
         private const string ScanGridLayerName = "0_grid";
@@ -433,7 +433,7 @@ namespace DraftingSuite
 
         private static double PromptScanGridSpacing(Editor ed)
         {
-            PromptStringOptions options = new PromptStringOptions("\nGrid spacing [10/15/20/25/50] <10>: ")
+            PromptStringOptions options = new PromptStringOptions("\nGrid spacing [10/15/20/25/50]: ")
             {
                 AllowSpaces = false,
                 DefaultValue = "10",
@@ -467,7 +467,7 @@ namespace DraftingSuite
 
         private static short PromptScanGridColor(Editor ed)
         {
-            PromptKeywordOptions options = new PromptKeywordOptions("\nGrid color [White/Cyan/Red/Gray/Magenta] <White>: ");
+            PromptKeywordOptions options = new PromptKeywordOptions("\nGrid color [White/Cyan/Red/Gray/Magenta]: ");
             options.AllowNone = true;
             options.Keywords.Add("White");
             options.Keywords.Add("Cyan");
@@ -494,7 +494,7 @@ namespace DraftingSuite
 
         private static double PromptScanGridRotation(Editor ed)
         {
-            PromptAngleOptions options = new PromptAngleOptions("\nGrid rotation angle <0>: ")
+            PromptAngleOptions options = new PromptAngleOptions("\nGrid rotation angle: ")
             {
                 AllowNone = true,
                 DefaultValue = 0.0,

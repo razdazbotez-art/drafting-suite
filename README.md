@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.72`
+Current version: `0.1.73`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
