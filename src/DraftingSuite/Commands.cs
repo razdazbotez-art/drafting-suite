@@ -31,7 +31,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.74";
+        private const string Version = "0.1.75";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
         private const string ScanGridLayerName = "0_grid";
@@ -405,13 +405,17 @@ namespace DraftingSuite
                     tr.Commit();
                 }
 
-                PromptKeywordOptions confirm = new PromptKeywordOptions("\nDelete " + typeLabel + " vertex " + vertex.Number + " [Yes/No]: ");
+                PromptKeywordOptions confirm = new PromptKeywordOptions("\nDelete " + typeLabel + " vertex " + vertex.Number + " [Yes/No] <Yes>: ");
+                confirm.AllowNone = true;
                 confirm.Keywords.Add("Yes");
                 confirm.Keywords.Add("No");
-                confirm.Keywords.Default = "No";
+                confirm.Keywords.Default = "Yes";
                 PromptResult answer = ed.GetKeywords(confirm);
-                if (answer.Status != PromptStatus.OK || !string.Equals(answer.StringResult, "Yes", StringComparison.OrdinalIgnoreCase))
+                if (answer.Status == PromptStatus.Cancel ||
+                    answer.Status == PromptStatus.OK && string.Equals(answer.StringResult, "No", StringComparison.OrdinalIgnoreCase))
+                {
                     return;
+                }
 
                 using (doc.LockDocument())
                 using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
