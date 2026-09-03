@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.73`
+Current version: `0.1.74`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -18,6 +18,8 @@ New installs start with the built-in `Typical` preset.
 - `DSFLATTEN` flattens selected objects to elevation `0`.
 - `DSBYLAYER` sets selected objects to ByLayer color, linetype, and lineweight.
 - `DSLINE3D` converts selected lines to 3D polylines.
+- `DSINSERTVERTEX` inserts a vertex on the picked regular polyline or 3D polyline segment. For 3D polylines, Z is interpolated from that segment.
+- `DSDELETEVERTEX` deletes the picked regular polyline or 3D polyline vertex after confirmation.
 - `DSCOGOSTD` sets selected COGO points to `Standard` point and label styles.
 - `DSSETTINGS` opens the modeless FBK Prep Config window.
 - `DSVERSION` prints the loaded Drafting Suite version.

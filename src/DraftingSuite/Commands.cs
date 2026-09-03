@@ -31,7 +31,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.73";
+        private const string Version = "0.1.74";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
         private const string ScanGridLayerName = "0_grid";
@@ -308,6 +308,130 @@ namespace DraftingSuite
                 });
         }
 
+        [CommandMethod("DSINSERTVERTEX", CommandFlags.Modal)]
+        public void InsertPolylineVertex()
+        {
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Editor ed = doc?.Editor;
+            if (doc == null || ed == null)
+                return;
+
+            try
+            {
+                PromptEntityOptions options = new PromptEntityOptions("\nPick regular polyline or 3D polyline segment to insert vertex: ");
+                options.SetRejectMessage("\nSelect a regular polyline or 3D polyline.");
+                options.AddAllowedClass(typeof(Polyline), false);
+                options.AddAllowedClass(typeof(Polyline3d), false);
+                PromptEntityResult picked = ed.GetEntity(options);
+                if (picked.Status != PromptStatus.OK)
+                    return;
+
+                PolylineSegmentPick segment;
+                string typeLabel;
+                using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    Entity entity = tr.GetObject(picked.ObjectId, OpenMode.ForRead, false) as Entity;
+                    typeLabel = PolylineTypeLabel(entity);
+                    if (HasPolylineArcSegments(entity))
+                    {
+                        ed.WriteMessage("\nInsert vertex skipped: arc segments are not supported yet.");
+                        return;
+                    }
+
+                    if (!TryFindPickedPolylineSegment(entity, tr, picked.PickedPoint, out segment))
+                    {
+                        ed.WriteMessage("\nNo usable segment was found at the picked location.");
+                        return;
+                    }
+
+                    tr.Commit();
+                }
+
+                using (doc.LockDocument())
+                using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    Entity entity = tr.GetObject(picked.ObjectId, OpenMode.ForWrite, false) as Entity;
+                    if (InsertVertexAtSegment(entity, tr, segment))
+                    {
+                        tr.Commit();
+                        ed.WriteMessage("\nInserted vertex {0} on {1} segment {2}-{3}.", segment.InsertedVertexNumber, typeLabel, segment.StartNumber, segment.EndNumber);
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                ed.WriteMessage("\nInsert vertex failed: {0}", ex.Message);
+            }
+
+            ed.WriteMessage("\n");
+        }
+
+        [CommandMethod("DSDELETEVERTEX", CommandFlags.Modal)]
+        public void DeletePolylineVertex()
+        {
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Editor ed = doc?.Editor;
+            if (doc == null || ed == null)
+                return;
+
+            try
+            {
+                PromptEntityOptions options = new PromptEntityOptions("\nPick regular polyline or 3D polyline vertex to delete: ");
+                options.SetRejectMessage("\nSelect a regular polyline or 3D polyline.");
+                options.AddAllowedClass(typeof(Polyline), false);
+                options.AddAllowedClass(typeof(Polyline3d), false);
+                PromptEntityResult picked = ed.GetEntity(options);
+                if (picked.Status != PromptStatus.OK)
+                    return;
+
+                PolylineVertexPick vertex;
+                string typeLabel;
+                using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    Entity entity = tr.GetObject(picked.ObjectId, OpenMode.ForRead, false) as Entity;
+                    typeLabel = PolylineTypeLabel(entity);
+                    if (!TryFindPickedPolylineVertex(entity, tr, picked.PickedPoint, out vertex))
+                    {
+                        ed.WriteMessage("\nNo usable vertex was found at the picked location.");
+                        return;
+                    }
+
+                    if (!CanDeletePolylineVertex(entity, vertex.Index))
+                    {
+                        ed.WriteMessage("\nDelete skipped because the polyline would not have enough vertices.");
+                        return;
+                    }
+
+                    tr.Commit();
+                }
+
+                PromptKeywordOptions confirm = new PromptKeywordOptions("\nDelete " + typeLabel + " vertex " + vertex.Number + " [Yes/No]: ");
+                confirm.Keywords.Add("Yes");
+                confirm.Keywords.Add("No");
+                confirm.Keywords.Default = "No";
+                PromptResult answer = ed.GetKeywords(confirm);
+                if (answer.Status != PromptStatus.OK || !string.Equals(answer.StringResult, "Yes", StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                using (doc.LockDocument())
+                using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    Entity entity = tr.GetObject(picked.ObjectId, OpenMode.ForWrite, false) as Entity;
+                    if (DeleteVertexAtPick(entity, tr, vertex))
+                    {
+                        tr.Commit();
+                        ed.WriteMessage("\nDeleted {0} vertex {1}.", typeLabel, vertex.Number);
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                ed.WriteMessage("\nDelete vertex failed: {0}", ex.Message);
+            }
+
+            ed.WriteMessage("\n");
+        }
+
         [CommandMethod("DSCOGOSTD", CommandFlags.Modal)]
         public void SetSelectedCogoPointsStandard()
         {
@@ -409,8 +533,225 @@ namespace DraftingSuite
             if (ed == null)
                 return;
 
-            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, CFBK, DSGRID, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
+            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, CFBK, DSGRID, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSINSERTVERTEX, DSDELETEVERTEX, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
             ed.WriteMessage("\n");
+        }
+
+        private static bool TryFindPickedPolylineSegment(Entity entity, Transaction tr, Point3d pickedPoint, out PolylineSegmentPick pick)
+        {
+            pick = null;
+            List<PolylineVertexRead> vertices = ReadPolylineVertices(entity, tr);
+            if (vertices.Count < 2)
+                return false;
+
+            bool closed = IsClosedPolyline(entity);
+            double bestDistance = double.MaxValue;
+            PolylineSegmentPick bestPick = null;
+            int segmentCount = closed ? vertices.Count : vertices.Count - 1;
+            for (int index = 0; index < segmentCount; index++)
+            {
+                PolylineVertexRead start = vertices[index];
+                PolylineVertexRead end = vertices[(index + 1) % vertices.Count];
+                if (Distance2d(start.Point, end.Point) <= 1e-8)
+                    continue;
+
+                double parameter;
+                Point3d projected = ProjectPointToSegment2d(pickedPoint, start.Point, end.Point, out parameter);
+                double distance = Distance2d(pickedPoint, projected);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestPick = new PolylineSegmentPick(index, (index + 1) % vertices.Count, start, end, projected, parameter);
+                }
+            }
+
+            pick = bestPick;
+            return pick != null;
+        }
+
+        private static bool InsertVertexAtSegment(Entity entity, Transaction tr, PolylineSegmentPick segment)
+        {
+            Polyline polyline = entity as Polyline;
+            if (polyline != null)
+            {
+                int insertIndex = segment.StartIndex + 1;
+                if (polyline.Closed && segment.StartIndex == polyline.NumberOfVertices - 1)
+                    insertIndex = polyline.NumberOfVertices;
+
+                polyline.AddVertexAt(insertIndex, new Point2d(segment.InsertPoint.X, segment.InsertPoint.Y), 0.0, 0.0, 0.0);
+                segment.InsertedVertexNumber = insertIndex + 1;
+                return true;
+            }
+
+            Polyline3d polyline3d = entity as Polyline3d;
+            if (polyline3d != null)
+            {
+                PolylineVertex3d vertex = new PolylineVertex3d(segment.InsertPoint);
+                polyline3d.InsertVertexAt(segment.Start.VertexId, vertex);
+                tr.AddNewlyCreatedDBObject(vertex, true);
+                segment.InsertedVertexNumber = segment.StartIndex + 2;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryFindPickedPolylineVertex(Entity entity, Transaction tr, Point3d pickedPoint, out PolylineVertexPick pick)
+        {
+            pick = null;
+            List<PolylineVertexRead> vertices = ReadPolylineVertices(entity, tr);
+            if (vertices.Count == 0)
+                return false;
+
+            double bestDistance = double.MaxValue;
+            PolylineVertexRead bestVertex = null;
+            foreach (PolylineVertexRead vertex in vertices)
+            {
+                double distance = Distance2d(pickedPoint, vertex.Point);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestVertex = vertex;
+                }
+            }
+
+            if (bestVertex == null)
+                return false;
+
+            pick = new PolylineVertexPick(bestVertex.Index, bestVertex.Point, bestVertex.VertexId);
+            return true;
+        }
+
+        private static bool CanDeletePolylineVertex(Entity entity, int vertexIndex)
+        {
+            Polyline polyline = entity as Polyline;
+            if (polyline != null)
+            {
+                int minimum = polyline.Closed ? 3 : 2;
+                return vertexIndex >= 0 && vertexIndex < polyline.NumberOfVertices && polyline.NumberOfVertices - 1 >= minimum;
+            }
+
+            Polyline3d polyline3d = entity as Polyline3d;
+            if (polyline3d != null)
+            {
+                int minimum = polyline3d.Closed ? 3 : 2;
+                int count = 0;
+                foreach (ObjectId ignored in polyline3d)
+                    count++;
+                return vertexIndex >= 0 && vertexIndex < count && count - 1 >= minimum;
+            }
+
+            return false;
+        }
+
+        private static bool DeleteVertexAtPick(Entity entity, Transaction tr, PolylineVertexPick vertex)
+        {
+            Polyline polyline = entity as Polyline;
+            if (polyline != null)
+            {
+                polyline.RemoveVertexAt(vertex.Index);
+                return true;
+            }
+
+            Polyline3d polyline3d = entity as Polyline3d;
+            if (polyline3d != null && vertex.VertexId.IsValid && !vertex.VertexId.IsErased)
+            {
+                PolylineVertex3d vertex3d = tr.GetObject(vertex.VertexId, OpenMode.ForWrite, false) as PolylineVertex3d;
+                if (vertex3d == null)
+                    return false;
+
+                vertex3d.Erase();
+                return true;
+            }
+
+            return false;
+        }
+
+        private static List<PolylineVertexRead> ReadPolylineVertices(Entity entity, Transaction tr)
+        {
+            List<PolylineVertexRead> vertices = new List<PolylineVertexRead>();
+
+            Polyline polyline = entity as Polyline;
+            if (polyline != null)
+            {
+                for (int index = 0; index < polyline.NumberOfVertices; index++)
+                {
+                    Point2d point = polyline.GetPoint2dAt(index);
+                    vertices.Add(new PolylineVertexRead(index, new Point3d(point.X, point.Y, polyline.Elevation), ObjectId.Null));
+                }
+                return vertices;
+            }
+
+            Polyline3d polyline3d = entity as Polyline3d;
+            if (polyline3d != null)
+            {
+                int index = 0;
+                foreach (ObjectId vertexId in polyline3d)
+                {
+                    PolylineVertex3d vertex = tr.GetObject(vertexId, OpenMode.ForRead, false) as PolylineVertex3d;
+                    if (vertex != null)
+                        vertices.Add(new PolylineVertexRead(index, vertex.Position, vertexId));
+                    index++;
+                }
+            }
+
+            return vertices;
+        }
+
+        private static bool IsClosedPolyline(Entity entity)
+        {
+            Polyline polyline = entity as Polyline;
+            if (polyline != null)
+                return polyline.Closed;
+
+            Polyline3d polyline3d = entity as Polyline3d;
+            return polyline3d != null && polyline3d.Closed;
+        }
+
+        private static bool HasPolylineArcSegments(Entity entity)
+        {
+            Polyline polyline = entity as Polyline;
+            if (polyline == null)
+                return false;
+
+            for (int index = 0; index < polyline.NumberOfVertices; index++)
+            {
+                if (Math.Abs(polyline.GetBulgeAt(index)) > 1e-10)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static Point3d ProjectPointToSegment2d(Point3d point, Point3d start, Point3d end, out double parameter)
+        {
+            double dx = end.X - start.X;
+            double dy = end.Y - start.Y;
+            double lengthSquared = (dx * dx) + (dy * dy);
+            if (lengthSquared <= 1e-12)
+            {
+                parameter = 0.0;
+                return start;
+            }
+
+            parameter = (((point.X - start.X) * dx) + ((point.Y - start.Y) * dy)) / lengthSquared;
+            parameter = Math.Max(0.0, Math.Min(1.0, parameter));
+            return new Point3d(
+                start.X + dx * parameter,
+                start.Y + dy * parameter,
+                start.Z + (end.Z - start.Z) * parameter);
+        }
+
+        private static double Distance2d(Point3d first, Point3d second)
+        {
+            double dx = first.X - second.X;
+            double dy = first.Y - second.Y;
+            return Math.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        private static string PolylineTypeLabel(Entity entity)
+        {
+            return entity is Polyline3d ? "3D polyline" : "polyline";
         }
 
         private static DraftingSuiteSettings CreateStandaloneUtilitySettings()
@@ -3834,6 +4175,59 @@ namespace DraftingSuite
 
             public Point2d Start { get; }
             public Point2d End { get; }
+        }
+
+        private sealed class PolylineVertexRead
+        {
+            public PolylineVertexRead(int index, Point3d point, ObjectId vertexId)
+            {
+                Index = index;
+                Point = point;
+                VertexId = vertexId;
+            }
+
+            public int Index { get; }
+            public int Number => Index + 1;
+            public Point3d Point { get; }
+            public ObjectId VertexId { get; }
+        }
+
+        private sealed class PolylineSegmentPick
+        {
+            public PolylineSegmentPick(int startIndex, int endIndex, PolylineVertexRead start, PolylineVertexRead end, Point3d insertPoint, double parameter)
+            {
+                StartIndex = startIndex;
+                EndIndex = endIndex;
+                Start = start;
+                End = end;
+                InsertPoint = insertPoint;
+                Parameter = parameter;
+            }
+
+            public int StartIndex { get; }
+            public int EndIndex { get; }
+            public int StartNumber => StartIndex + 1;
+            public int EndNumber => EndIndex + 1;
+            public PolylineVertexRead Start { get; }
+            public PolylineVertexRead End { get; }
+            public Point3d InsertPoint { get; }
+            public double Parameter { get; }
+            public int InsertedVertexNumber { get; set; }
+        }
+
+        private sealed class PolylineVertexPick
+        {
+            public PolylineVertexPick(int index, Point3d point, ObjectId vertexId)
+            {
+                Index = index;
+                Point = point;
+                VertexId = vertexId;
+            }
+
+            public int Index { get; }
+            public int Number => Index + 1;
+            public Point3d Point { get; }
+            public ObjectId VertexId { get; }
         }
 
         private sealed class FbkPrepResult

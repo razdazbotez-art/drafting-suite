@@ -395,6 +395,8 @@ namespace DraftingSuite
                 new CommandPadButtonSetting("Flatten to 0", "DSFLATTEN", "Move selected drafting annotation to elevation 0.", true),
                 new CommandPadButtonSetting("Set ByLayer", "DSBYLAYER", "Set selected objects to ByLayer color, linetype, and lineweight.", true),
                 new CommandPadButtonSetting("Lines to 3D Poly", "DSLINE3D", "Convert selected regular lines to 3D polylines.", true),
+                new CommandPadButtonSetting("Insert Vertex", "DSINSERTVERTEX", "Insert a vertex on the picked regular polyline or 3D polyline segment.", true),
+                new CommandPadButtonSetting("Delete Vertex", "DSDELETEVERTEX", "Delete the picked regular polyline or 3D polyline vertex after confirmation.", true),
                 new CommandPadButtonSetting("COGO to Standard", "DSCOGOSTD", "Set selected COGO points to Standard point and label styles.", true)
             };
         }
@@ -472,6 +474,18 @@ namespace DraftingSuite
                 return "COGO to Standard";
             }
 
+            if (string.Equals(cleanCommand, "DSINSERTVERTEX", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "InsV", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Insert Vertex";
+            }
+
+            if (string.Equals(cleanCommand, "DSDELETEVERTEX", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(cleanLabel, "DelV", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Delete Vertex";
+            }
+
             if (string.Equals(cleanCommand, "DSGRID", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(cleanLabel, "Grid", StringComparison.OrdinalIgnoreCase))
             {
@@ -523,6 +537,18 @@ namespace DraftingSuite
                 string.IsNullOrWhiteSpace(description))
             {
                 return "Create a clipped scan spacing grid inside a selected closed polyline.";
+            }
+
+            if (string.Equals(cleanCommand, "DSINSERTVERTEX", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(description))
+            {
+                return "Insert a vertex on the picked regular polyline or 3D polyline segment.";
+            }
+
+            if (string.Equals(cleanCommand, "DSDELETEVERTEX", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(description))
+            {
+                return "Delete the picked regular polyline or 3D polyline vertex after confirmation.";
             }
 
             return description ?? string.Empty;
