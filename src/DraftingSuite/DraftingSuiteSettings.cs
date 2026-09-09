@@ -397,7 +397,10 @@ namespace DraftingSuite
                 new CommandPadButtonSetting("Lines to 3D Poly", "DSLINE3D", "Convert selected regular lines to 3D polylines.", true),
                 new CommandPadButtonSetting("Insert Vertex", "DSINSERTVERTEX", "Insert a vertex on the picked regular polyline or 3D polyline segment.", true),
                 new CommandPadButtonSetting("Delete Vertex", "DSDELETEVERTEX", "Delete the picked regular polyline or 3D polyline vertex after confirmation.", true),
-                new CommandPadButtonSetting("COGO to Standard", "DSCOGOSTD", "Set selected COGO points to Standard point and label styles.", true)
+                new CommandPadButtonSetting("COGO to Standard", "DSCOGOSTD", "Set selected COGO points to Standard point and label styles.", true),
+                new CommandPadButtonSetting("CSM Convert DWG", "CSMCONVERTDWG", "Convert a source DWG into the active target-standard drawing using an approved CadStandardsMapper profile.", true),
+                new CommandPadButtonSetting("CSM Scan DWTs", "CSMSCANDWTS", "Export CadStandardsMapper inventories from selected source and target DWT files.", true),
+                new CommandPadButtonSetting("CSM Block Thumbs", "CSMEXPORTBLOCKTHUMBNAILS", "Export stored block preview thumbnails for CadStandardsMapper review.", true)
             };
         }
 
@@ -492,6 +495,24 @@ namespace DraftingSuite
                 return "Scan Grid";
             }
 
+            if (string.Equals(cleanCommand, "CSMCONVERTDWG", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(cleanLabel))
+            {
+                return "CSM Convert DWG";
+            }
+
+            if (string.Equals(cleanCommand, "CSMSCANDWTS", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(cleanLabel))
+            {
+                return "CSM Scan DWTs";
+            }
+
+            if (string.Equals(cleanCommand, "CSMEXPORTBLOCKTHUMBNAILS", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(cleanLabel))
+            {
+                return "CSM Block Thumbs";
+            }
+
             return string.IsNullOrWhiteSpace(cleanLabel) ? cleanCommand : cleanLabel;
         }
 
@@ -549,6 +570,24 @@ namespace DraftingSuite
                 string.IsNullOrWhiteSpace(description))
             {
                 return "Delete the picked regular polyline or 3D polyline vertex after confirmation.";
+            }
+
+            if (string.Equals(cleanCommand, "CSMCONVERTDWG", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(description))
+            {
+                return "Convert a source DWG into the active target-standard drawing using an approved CadStandardsMapper profile.";
+            }
+
+            if (string.Equals(cleanCommand, "CSMSCANDWTS", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(description))
+            {
+                return "Export CadStandardsMapper inventories from selected source and target DWT files.";
+            }
+
+            if (string.Equals(cleanCommand, "CSMEXPORTBLOCKTHUMBNAILS", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(description))
+            {
+                return "Export stored block preview thumbnails for CadStandardsMapper review.";
             }
 
             return description ?? string.Empty;

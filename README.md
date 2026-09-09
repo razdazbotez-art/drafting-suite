@@ -1,6 +1,6 @@
 # Drafting Suite
 
-Current version: `0.1.75`
+Current version: `0.1.76`
 
 Drafting Suite is a Tools by Raul Civil 3D drafting helper plugin. It is the home for managed replacements for high-use drafting AutoLISP routines.
 
@@ -21,6 +21,9 @@ New installs start with the built-in `Typical` preset.
 - `DSINSERTVERTEX` inserts a vertex on the picked regular polyline or 3D polyline segment. For 3D polylines, Z is interpolated from that segment.
 - `DSDELETEVERTEX` deletes the picked regular polyline or 3D polyline vertex after confirmation.
 - `DSCOGOSTD` sets selected COGO points to `Standard` point and label styles.
+- `CSMCONVERTDWG` converts a source DWG into the active target-standard drawing using an approved CadStandardsMapper profile, when the CadStandardsMapper AutoCAD helper is loaded.
+- `CSMSCANDWTS` exports CadStandardsMapper inventories from selected source and target DWT files, when the CadStandardsMapper AutoCAD helper is loaded.
+- `CSMEXPORTBLOCKTHUMBNAILS` exports stored block preview thumbnails for CadStandardsMapper review, when the CadStandardsMapper AutoCAD helper is loaded.
 - `DSSETTINGS` opens the modeless FBK Prep Config window.
 - `DSVERSION` prints the loaded Drafting Suite version.
 

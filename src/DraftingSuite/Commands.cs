@@ -31,7 +31,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.75";
+        private const string Version = "0.1.76";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
         private const string ScanGridLayerName = "0_grid";
@@ -537,7 +537,7 @@ namespace DraftingSuite
             if (ed == null)
                 return;
 
-            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, CFBK, DSGRID, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSINSERTVERTEX, DSDELETEVERTEX, DSCOGOSTD, DSSETTINGS, DSVERSION.", Version);
+            ed.WriteMessage("\nDrafting Suite v{0} loaded. Commands: DS, CFBK, DSGRID, DSFBKPREP, DSFBKCONFIG, DSMT2ML, DSDELETETINY, DSFLATTEN, DSBYLAYER, DSLINE3D, DSINSERTVERTEX, DSDELETEVERTEX, DSCOGOSTD, CSMCONVERTDWG, CSMSCANDWTS, CSMEXPORTBLOCKTHUMBNAILS, DSSETTINGS, DSVERSION.", Version);
             ed.WriteMessage("\n");
         }
 

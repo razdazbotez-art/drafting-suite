@@ -261,6 +261,7 @@ namespace DraftingSuite
             padCommandBox = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
             padCommandBox.Items.AddRange(new object[]
             {
+                "CFBK",
                 "DSFBKPREP",
                 "DSFBKCONFIG",
                 "DSGRID",
@@ -269,7 +270,12 @@ namespace DraftingSuite
                 "DSFLATTEN",
                 "DSBYLAYER",
                 "DSLINE3D",
-                "DSCOGOSTD"
+                "DSINSERTVERTEX",
+                "DSDELETEVERTEX",
+                "DSCOGOSTD",
+                "CSMCONVERTDWG",
+                "CSMSCANDWTS",
+                "CSMEXPORTBLOCKTHUMBNAILS"
             });
             padCommandBox.SelectedIndexChanged += (_, __) => SaveSelectedPadButton();
             AddPadConfigRow(editor, "Command", padCommandBox);
