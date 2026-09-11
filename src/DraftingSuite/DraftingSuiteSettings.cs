@@ -389,7 +389,8 @@ namespace DraftingSuite
                 new CommandPadButtonSetting("Combine FBKs", "CFBK", "Combine allowed CAD objects from processed FBK drawings in a folder.", true),
                 new CommandPadButtonSetting("FBK Prep", "DSFBKPREP", "Prepare the opened FBK drawing using the active FBK Prep preset.", true),
                 new CommandPadButtonSetting("FBK Prep Config", "DSFBKCONFIG", "Open FBK Prep configuration and presets.", true),
-                new CommandPadButtonSetting("Scan Grid", "DSGRID", "Create a clipped scan spacing grid inside a selected closed polyline.", true),
+                new CommandPadButtonSetting("Scan Grid (Legacy)", "DSGRID", "Create a clipped scan spacing grid inside a selected closed polyline.", true),
+                new CommandPadButtonSetting("Grid / Sections", "D2SSURVEYPOINTS", "Create scan-elevation points from a grid or guide-line sections.", true),
                 new CommandPadButtonSetting("Text to MLeader", "DSMT2ML", "Convert selected text or mtext to mleaders using the current MLeader style with a 15 drawing-unit text offset.", true),
                 new CommandPadButtonSetting("Delete Small Text", "DSDELETETINY", "Delete selected text or mtext below the configured small text height.", true),
                 new CommandPadButtonSetting("Flatten to 0", "DSFLATTEN", "Move selected drafting annotation to elevation 0.", true),
@@ -490,9 +491,16 @@ namespace DraftingSuite
             }
 
             if (string.Equals(cleanCommand, "DSGRID", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(cleanLabel, "Grid", StringComparison.OrdinalIgnoreCase))
+                (string.Equals(cleanLabel, "Grid", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(cleanLabel, "Scan Grid", StringComparison.OrdinalIgnoreCase)))
             {
-                return "Scan Grid";
+                return "Scan Grid (Legacy)";
+            }
+
+            if (string.Equals(cleanCommand, "D2SSURVEYPOINTS", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(cleanLabel))
+            {
+                return "Grid / Sections";
             }
 
             if (string.Equals(cleanCommand, "CSMCONVERTDWG", StringComparison.OrdinalIgnoreCase) &&
@@ -558,6 +566,12 @@ namespace DraftingSuite
                 string.IsNullOrWhiteSpace(description))
             {
                 return "Create a clipped scan spacing grid inside a selected closed polyline.";
+            }
+
+            if (string.Equals(cleanCommand, "D2SSURVEYPOINTS", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(description))
+            {
+                return "Create scan-elevation points from a grid or guide-line sections.";
             }
 
             if (string.Equals(cleanCommand, "DSINSERTVERTEX", StringComparison.OrdinalIgnoreCase) &&
