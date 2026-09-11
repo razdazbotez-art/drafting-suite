@@ -265,6 +265,7 @@ namespace DraftingSuite
                 "DSFBKPREP",
                 "DSFBKCONFIG",
                 "DSGRID",
+                "D2SSURVEYPOINTS",
                 "DSMT2ML",
                 "DSDELETETINY",
                 "DSFLATTEN",
