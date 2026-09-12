@@ -31,7 +31,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.79";
+        private const string Version = "0.1.80";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
         private const string ScanGridLayerName = "0_grid";
