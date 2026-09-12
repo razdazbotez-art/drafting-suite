@@ -95,6 +95,9 @@ namespace DraftingSuite
                     session.FocusHeight = Math.Max(currentHeight * 0.08, 5.0);
 
                 double aspect = Math.Max(view.Width, currentHeight) / currentHeight;
+                view.ViewDirection = Vector3d.ZAxis;
+                view.ViewTwist = 0.0;
+                view.Target = Point3d.Origin;
                 view.Height = session.FocusHeight;
                 view.Width = session.FocusHeight * aspect;
                 view.CenterPoint = new Point2d(position.X, position.Y);
