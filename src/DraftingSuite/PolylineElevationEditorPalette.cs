@@ -72,7 +72,7 @@ namespace DraftingSuite
             return session.Index >= 0 && session.Index < session.Vertices.Count;
         }
 
-        private static void FocusCurrent()
+        private static void FocusCurrent(bool startPick = true)
         {
             if (!HasActiveSession(out Document document, out Editor editor))
                 return;
@@ -94,12 +94,15 @@ namespace DraftingSuite
                 if (session.FocusHeight <= 0.0)
                     session.FocusHeight = Math.Max(currentHeight * 0.08, 5.0);
 
-                double aspect = Math.Max(view.Width, currentHeight) / currentHeight;
-                view.Target = position;
-                view.Height = session.FocusHeight;
-                view.Width = session.FocusHeight * aspect;
-                view.CenterPoint = Point2d.Origin;
-                editor.SetCurrentView(view);
+                if (session.ZoomToActiveVertex)
+                {
+                    double aspect = Math.Max(view.Width, currentHeight) / currentHeight;
+                    view.Target = position;
+                    view.Height = session.FocusHeight;
+                    view.Width = session.FocusHeight * aspect;
+                    view.CenterPoint = Point2d.Origin;
+                    editor.SetCurrentView(view);
+                }
             }
 
             ClearMarker();
@@ -114,6 +117,8 @@ namespace DraftingSuite
                 new IntegerCollection());
             editor.UpdateScreen();
             control.RefreshSession();
+            if (startPick && session.AutoPickElevation)
+                PickElevation();
         }
 
         private static void ClearMarker()
@@ -257,6 +262,8 @@ namespace DraftingSuite
                 {
                     paletteSet.Visible = true;
                     paletteSet.Activate(0);
+                    if (session != null)
+                        FocusCurrent(false);
                 }
             }
         }
@@ -273,6 +280,8 @@ namespace DraftingSuite
             public List<Commands.PolylineVertexElevationEdit> Vertices { get; }
             public int Index { get; set; }
             public int Changed { get; set; }
+            public bool AutoPickElevation { get; set; } = true;
+            public bool ZoomToActiveVertex { get; set; } = true;
             public double FocusHeight { get; set; }
         }
 
@@ -285,6 +294,7 @@ namespace DraftingSuite
             private readonly Button keepButton;
             private readonly Button previousButton;
             private readonly Button finishButton;
+            private readonly CheckBox zoomCheck;
 
             public EditorControl()
             {
@@ -296,10 +306,11 @@ namespace DraftingSuite
                 {
                     Dock = DockStyle.Fill,
                     ColumnCount = 1,
-                    RowCount = 4,
+                    RowCount = 5,
                     Padding = new Padding(12)
                 };
                 root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+                root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -317,6 +328,19 @@ namespace DraftingSuite
                     AutoSize = true,
                     ForeColor = Color.FromArgb(55, 65, 81),
                     Margin = new Padding(0, 0, 0, 12)
+                };
+
+                zoomCheck = new CheckBox
+                {
+                    Text = "Zoom to active vertex",
+                    AutoSize = true,
+                    Checked = true,
+                    Margin = new Padding(0, 0, 0, 8)
+                };
+                zoomCheck.CheckedChanged += (_, __) =>
+                {
+                    if (session != null)
+                        session.ZoomToActiveVertex = zoomCheck.Checked;
                 };
 
                 FlowLayoutPanel actions = new FlowLayoutPanel
@@ -354,8 +378,9 @@ namespace DraftingSuite
 
                 root.Controls.Add(currentLabel, 0, 0);
                 root.Controls.Add(positionLabel, 0, 1);
-                root.Controls.Add(actions, 0, 2);
-                root.Controls.Add(hint, 0, 3);
+                root.Controls.Add(zoomCheck, 0, 2);
+                root.Controls.Add(actions, 0, 3);
+                root.Controls.Add(hint, 0, 4);
                 Controls.Add(root);
                 RefreshSession();
             }
@@ -368,6 +393,9 @@ namespace DraftingSuite
                 keepButton.Enabled = active;
                 previousButton.Enabled = active && session.Index > 0;
                 finishButton.Enabled = active;
+                zoomCheck.Enabled = active;
+                if (active && zoomCheck.Checked != session.ZoomToActiveVertex)
+                    zoomCheck.Checked = session.ZoomToActiveVertex;
 
                 if (!active)
                 {
