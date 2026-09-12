@@ -31,7 +31,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.77";
+        private const string Version = "0.1.78";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
         private const string ScanGridLayerName = "0_grid";
@@ -344,99 +344,7 @@ namespace DraftingSuite
                 if (skippedEntities > 0)
                     ed.WriteMessage("\n3D Poly Z skipped {0} non-3D-polyline object(s).", skippedEntities);
 
-                int current = 0;
-                int changed = 0;
-                while (current >= 0 && current < vertices.Count)
-                {
-                    PolylineVertexElevationEdit edit = vertices[current];
-                    Point3d position;
-                    if (!TryReadVertexPosition(db, edit.VertexId, out position))
-                    {
-                        ed.WriteMessage("\n3D Poly Z skipped an unavailable vertex.");
-                        current++;
-                        continue;
-                    }
-
-                    ed.SetImpliedSelection(new[] { edit.PolylineId });
-                    ed.WriteMessage(
-                        "\n3D Poly Z {0}/{1} — polyline {2}, vertex {3}: X={4:0.###}, Y={5:0.###}, Z={6:0.###}",
-                        current + 1,
-                        vertices.Count,
-                        edit.Handle,
-                        edit.VertexNumber,
-                        position.X,
-                        position.Y,
-                        position.Z);
-
-                    PromptKeywordOptions actionOptions = new PromptKeywordOptions("\nAction [Elevation/Pick/Keep/Back/Finish] <Elevation>: ");
-                    actionOptions.AllowNone = true;
-                    actionOptions.Keywords.Add("Elevation");
-                    actionOptions.Keywords.Add("Pick");
-                    actionOptions.Keywords.Add("Keep");
-                    actionOptions.Keywords.Add("Back");
-                    actionOptions.Keywords.Add("Finish");
-                    actionOptions.Keywords.Default = "Elevation";
-                    PromptResult actionResult = ed.GetKeywords(actionOptions);
-                    if (actionResult.Status == PromptStatus.Cancel)
-                        break;
-
-                    string action = actionResult.Status == PromptStatus.None ? "Elevation" : actionResult.StringResult;
-                    if (string.Equals(action, "Finish", StringComparison.OrdinalIgnoreCase))
-                        break;
-                    if (string.Equals(action, "Back", StringComparison.OrdinalIgnoreCase))
-                    {
-                        current = Math.Max(0, current - 1);
-                        continue;
-                    }
-                    if (string.Equals(action, "Keep", StringComparison.OrdinalIgnoreCase))
-                    {
-                        current++;
-                        continue;
-                    }
-
-                    double elevation;
-                    if (string.Equals(action, "Pick", StringComparison.OrdinalIgnoreCase))
-                    {
-                        PromptEntityOptions pickOptions = new PromptEntityOptions("\nSnap or pick a point on the source 3D polyline: ");
-                        pickOptions.SetRejectMessage("\nSelect a 3D polyline.");
-                        pickOptions.AddAllowedClass(typeof(Polyline3d), false);
-                        PromptEntityResult picked = ed.GetEntity(pickOptions);
-                        if (picked.Status != PromptStatus.OK)
-                            continue;
-
-                        if (!TryGetPickedPolyline3dElevation(db, picked.ObjectId, picked.PickedPoint, out elevation))
-                        {
-                            ed.WriteMessage("\n3D Poly Z could not determine an elevation at that pick.");
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        PromptDoubleOptions elevationOptions = new PromptDoubleOptions("\nEnter vertex elevation: ")
-                        {
-                            AllowNegative = true,
-                            AllowZero = true
-                        };
-                        PromptDoubleResult elevationResult = ed.GetDouble(elevationOptions);
-                        if (elevationResult.Status != PromptStatus.OK)
-                            continue;
-
-                        elevation = elevationResult.Value;
-                    }
-
-                    if (!SetVertexElevation(db, edit.VertexId, elevation))
-                    {
-                        ed.WriteMessage("\n3D Poly Z could not update that vertex.");
-                        current++;
-                        continue;
-                    }
-
-                    changed++;
-                    current++;
-                }
-
-                ed.SetImpliedSelection(new ObjectId[0]);
-                ed.WriteMessage("\n3D Poly Z complete. Updated {0} vertex elevation(s).", changed);
+                PolylineElevationEditorPalette.StartSession(doc, vertices);
             }
             catch (System.Exception ex)
             {
@@ -472,7 +380,7 @@ namespace DraftingSuite
             return result;
         }
 
-        private static bool TryReadVertexPosition(Database db, ObjectId vertexId, out Point3d position)
+        internal static bool TryReadVertexPosition(Database db, ObjectId vertexId, out Point3d position)
         {
             position = Point3d.Origin;
             if (vertexId.IsNull || vertexId.IsErased)
@@ -490,7 +398,7 @@ namespace DraftingSuite
             }
         }
 
-        private static bool SetVertexElevation(Database db, ObjectId vertexId, double elevation)
+        internal static bool SetVertexElevation(Database db, ObjectId vertexId, double elevation)
         {
             if (vertexId.IsNull || vertexId.IsErased)
                 return false;
@@ -508,7 +416,7 @@ namespace DraftingSuite
             }
         }
 
-        private static bool TryGetPickedPolyline3dElevation(Database db, ObjectId polylineId, Point3d pickedPoint, out double elevation)
+        internal static bool TryGetPickedPolyline3dElevation(Database db, ObjectId polylineId, Point3d pickedPoint, out double elevation)
         {
             elevation = 0.0;
             using (Transaction tr = db.TransactionManager.StartTransaction())
@@ -525,16 +433,16 @@ namespace DraftingSuite
                 double nearestDistance = double.MaxValue;
                 for (int index = 0; index < segmentCount; index++)
                 {
-                    PolylineVertexRead start = vertices[index];
-                    PolylineVertexRead end = vertices[(index + 1) % vertices.Count];
+                    PolylineVertexRead startVertex = vertices[index];
+                    PolylineVertexRead endVertex = vertices[(index + 1) % vertices.Count];
                     double parameter;
-                    Point3d projected = ProjectPointToSegment2d(pickedPoint, start.Point, end.Point, out parameter);
+                    Point3d projected = ProjectPointToSegment2d(pickedPoint, startVertex.Point, endVertex.Point, out parameter);
                     double distance = Distance2d(pickedPoint, projected);
                     if (distance >= nearestDistance)
                         continue;
 
                     nearestDistance = distance;
-                    elevation = start.Point.Z + ((end.Point.Z - start.Point.Z) * parameter);
+                    elevation = startVertex.Point.Z + ((endVertex.Point.Z - startVertex.Point.Z) * parameter);
                 }
 
                 tr.Commit();
@@ -4415,7 +4323,7 @@ namespace DraftingSuite
             public Point2d End { get; }
         }
 
-        private sealed class PolylineVertexElevationEdit
+        internal sealed class PolylineVertexElevationEdit
         {
             public PolylineVertexElevationEdit(ObjectId polylineId, ObjectId vertexId, int index, string handle)
             {
