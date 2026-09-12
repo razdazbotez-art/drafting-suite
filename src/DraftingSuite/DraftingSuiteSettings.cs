@@ -391,6 +391,7 @@ namespace DraftingSuite
                 new CommandPadButtonSetting("FBK Prep Config", "DSFBKCONFIG", "Open FBK Prep configuration and presets.", true),
                 new CommandPadButtonSetting("Scan Grid (Legacy)", "DSGRID", "Create a clipped scan spacing grid inside a selected closed polyline.", true),
                 new CommandPadButtonSetting("Grid / Sections", "D2SSURVEYPOINTS", "Create scan-elevation points from a grid or guide-line sections.", true),
+                new CommandPadButtonSetting("3D Poly Z", "EDIT3DZ", "Step through selected 3D-polyline vertices and set or pick their elevations.", true),
                 new CommandPadButtonSetting("Text to MLeader", "DSMT2ML", "Convert selected text or mtext to mleaders using the current MLeader style with a 15 drawing-unit text offset.", true),
                 new CommandPadButtonSetting("Delete Small Text", "DSDELETETINY", "Delete selected text or mtext below the configured small text height.", true),
                 new CommandPadButtonSetting("Flatten to 0", "DSFLATTEN", "Move selected drafting annotation to elevation 0.", true),
