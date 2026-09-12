@@ -31,7 +31,7 @@ namespace DraftingSuite
 
     public sealed class Commands
     {
-        private const string Version = "0.1.76";
+        private const string Version = "0.1.77";
         private const string CfbkDictionaryName = "DRAFTING_SUITE_CFBK";
         private const string CfbkImportSchema = "DraftingSuite.CFBK.Import.v1";
         private const string ScanGridLayerName = "0_grid";
@@ -306,6 +306,240 @@ namespace DraftingSuite
                 {
                     ed.WriteMessage("\n  Lines converted to 3D polylines: {0}", result.LinesConvertedTo3dPolylines);
                 });
+        }
+
+        [CommandMethod("EDIT3DZ", CommandFlags.Modal)]
+        public void Edit3dPolylineVertexElevations()
+        {
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Editor ed = doc?.Editor;
+            Database db = doc?.Database;
+            if (doc == null || ed == null || db == null)
+                return;
+
+            try
+            {
+                PromptSelectionOptions selectionOptions = new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect 3D polyline(s) whose vertex elevations will be edited: "
+                };
+                PromptSelectionResult selection = ed.GetSelection(selectionOptions);
+                if (selection.Status != PromptStatus.OK)
+                    return;
+
+                List<PolylineVertexElevationEdit> vertices;
+                int skippedEntities;
+                using (Transaction tr = db.TransactionManager.StartTransaction())
+                {
+                    vertices = ReadSelected3dPolylineVertices(selection.Value.GetObjectIds(), tr, out skippedEntities);
+                    tr.Commit();
+                }
+
+                if (vertices.Count == 0)
+                {
+                    ed.WriteMessage("\n3D Poly Z: no 3D-polyline vertices were selected.");
+                    return;
+                }
+
+                if (skippedEntities > 0)
+                    ed.WriteMessage("\n3D Poly Z skipped {0} non-3D-polyline object(s).", skippedEntities);
+
+                int current = 0;
+                int changed = 0;
+                while (current >= 0 && current < vertices.Count)
+                {
+                    PolylineVertexElevationEdit edit = vertices[current];
+                    Point3d position;
+                    if (!TryReadVertexPosition(db, edit.VertexId, out position))
+                    {
+                        ed.WriteMessage("\n3D Poly Z skipped an unavailable vertex.");
+                        current++;
+                        continue;
+                    }
+
+                    ed.SetImpliedSelection(new[] { edit.PolylineId });
+                    ed.WriteMessage(
+                        "\n3D Poly Z {0}/{1} — polyline {2}, vertex {3}: X={4:0.###}, Y={5:0.###}, Z={6:0.###}",
+                        current + 1,
+                        vertices.Count,
+                        edit.Handle,
+                        edit.VertexNumber,
+                        position.X,
+                        position.Y,
+                        position.Z);
+
+                    PromptKeywordOptions actionOptions = new PromptKeywordOptions("\nAction [Elevation/Pick/Keep/Back/Finish] <Elevation>: ");
+                    actionOptions.AllowNone = true;
+                    actionOptions.Keywords.Add("Elevation");
+                    actionOptions.Keywords.Add("Pick");
+                    actionOptions.Keywords.Add("Keep");
+                    actionOptions.Keywords.Add("Back");
+                    actionOptions.Keywords.Add("Finish");
+                    actionOptions.Keywords.Default = "Elevation";
+                    PromptResult actionResult = ed.GetKeywords(actionOptions);
+                    if (actionResult.Status == PromptStatus.Cancel)
+                        break;
+
+                    string action = actionResult.Status == PromptStatus.None ? "Elevation" : actionResult.StringResult;
+                    if (string.Equals(action, "Finish", StringComparison.OrdinalIgnoreCase))
+                        break;
+                    if (string.Equals(action, "Back", StringComparison.OrdinalIgnoreCase))
+                    {
+                        current = Math.Max(0, current - 1);
+                        continue;
+                    }
+                    if (string.Equals(action, "Keep", StringComparison.OrdinalIgnoreCase))
+                    {
+                        current++;
+                        continue;
+                    }
+
+                    double elevation;
+                    if (string.Equals(action, "Pick", StringComparison.OrdinalIgnoreCase))
+                    {
+                        PromptEntityOptions pickOptions = new PromptEntityOptions("\nSnap or pick a point on the source 3D polyline: ");
+                        pickOptions.SetRejectMessage("\nSelect a 3D polyline.");
+                        pickOptions.AddAllowedClass(typeof(Polyline3d), false);
+                        PromptEntityResult picked = ed.GetEntity(pickOptions);
+                        if (picked.Status != PromptStatus.OK)
+                            continue;
+
+                        if (!TryGetPickedPolyline3dElevation(db, picked.ObjectId, picked.PickedPoint, out elevation))
+                        {
+                            ed.WriteMessage("\n3D Poly Z could not determine an elevation at that pick.");
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        PromptDoubleOptions elevationOptions = new PromptDoubleOptions("\nEnter vertex elevation: ")
+                        {
+                            AllowNegative = true,
+                            AllowZero = true
+                        };
+                        PromptDoubleResult elevationResult = ed.GetDouble(elevationOptions);
+                        if (elevationResult.Status != PromptStatus.OK)
+                            continue;
+
+                        elevation = elevationResult.Value;
+                    }
+
+                    if (!SetVertexElevation(db, edit.VertexId, elevation))
+                    {
+                        ed.WriteMessage("\n3D Poly Z could not update that vertex.");
+                        current++;
+                        continue;
+                    }
+
+                    changed++;
+                    current++;
+                }
+
+                ed.SetImpliedSelection(new ObjectId[0]);
+                ed.WriteMessage("\n3D Poly Z complete. Updated {0} vertex elevation(s).", changed);
+            }
+            catch (System.Exception ex)
+            {
+                ed.WriteMessage("\n3D Poly Z failed: {0}", ex.Message);
+            }
+
+            ed.WriteMessage("\n");
+        }
+
+        private static List<PolylineVertexElevationEdit> ReadSelected3dPolylineVertices(IEnumerable<ObjectId> objectIds, Transaction tr, out int skippedEntities)
+        {
+            List<PolylineVertexElevationEdit> result = new List<PolylineVertexElevationEdit>();
+            skippedEntities = 0;
+
+            foreach (ObjectId objectId in objectIds ?? Enumerable.Empty<ObjectId>())
+            {
+                Polyline3d polyline = tr.GetObject(objectId, OpenMode.ForRead, false) as Polyline3d;
+                if (polyline == null)
+                {
+                    skippedEntities++;
+                    continue;
+                }
+
+                int index = 0;
+                foreach (ObjectId vertexId in polyline)
+                {
+                    if (!vertexId.IsNull && !vertexId.IsErased)
+                        result.Add(new PolylineVertexElevationEdit(objectId, vertexId, index, polyline.Handle.ToString()));
+                    index++;
+                }
+            }
+
+            return result;
+        }
+
+        private static bool TryReadVertexPosition(Database db, ObjectId vertexId, out Point3d position)
+        {
+            position = Point3d.Origin;
+            if (vertexId.IsNull || vertexId.IsErased)
+                return false;
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                PolylineVertex3d vertex = tr.GetObject(vertexId, OpenMode.ForRead, false) as PolylineVertex3d;
+                if (vertex == null)
+                    return false;
+
+                position = vertex.Position;
+                tr.Commit();
+                return true;
+            }
+        }
+
+        private static bool SetVertexElevation(Database db, ObjectId vertexId, double elevation)
+        {
+            if (vertexId.IsNull || vertexId.IsErased)
+                return false;
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                PolylineVertex3d vertex = tr.GetObject(vertexId, OpenMode.ForWrite, false) as PolylineVertex3d;
+                if (vertex == null)
+                    return false;
+
+                Point3d position = vertex.Position;
+                vertex.Position = new Point3d(position.X, position.Y, elevation);
+                tr.Commit();
+                return true;
+            }
+        }
+
+        private static bool TryGetPickedPolyline3dElevation(Database db, ObjectId polylineId, Point3d pickedPoint, out double elevation)
+        {
+            elevation = 0.0;
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                Polyline3d polyline = tr.GetObject(polylineId, OpenMode.ForRead, false) as Polyline3d;
+                if (polyline == null)
+                    return false;
+
+                List<PolylineVertexRead> vertices = ReadPolylineVertices(polyline, tr);
+                if (vertices.Count < 2)
+                    return false;
+
+                int segmentCount = polyline.Closed ? vertices.Count : vertices.Count - 1;
+                double nearestDistance = double.MaxValue;
+                for (int index = 0; index < segmentCount; index++)
+                {
+                    PolylineVertexRead start = vertices[index];
+                    PolylineVertexRead end = vertices[(index + 1) % vertices.Count];
+                    double parameter;
+                    Point3d projected = ProjectPointToSegment2d(pickedPoint, start.Point, end.Point, out parameter);
+                    double distance = Distance2d(pickedPoint, projected);
+                    if (distance >= nearestDistance)
+                        continue;
+
+                    nearestDistance = distance;
+                    elevation = start.Point.Z + ((end.Point.Z - start.Point.Z) * parameter);
+                }
+
+                tr.Commit();
+                return nearestDistance < double.MaxValue;
+            }
         }
 
         [CommandMethod("DSINSERTVERTEX", CommandFlags.Modal)]
@@ -4179,6 +4413,23 @@ namespace DraftingSuite
 
             public Point2d Start { get; }
             public Point2d End { get; }
+        }
+
+        private sealed class PolylineVertexElevationEdit
+        {
+            public PolylineVertexElevationEdit(ObjectId polylineId, ObjectId vertexId, int index, string handle)
+            {
+                PolylineId = polylineId;
+                VertexId = vertexId;
+                Index = index;
+                Handle = handle ?? string.Empty;
+            }
+
+            public ObjectId PolylineId { get; }
+            public ObjectId VertexId { get; }
+            public int Index { get; }
+            public int VertexNumber => Index + 1;
+            public string Handle { get; }
         }
 
         private sealed class PolylineVertexRead
