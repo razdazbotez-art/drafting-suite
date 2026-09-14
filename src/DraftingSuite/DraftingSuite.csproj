@@ -24,8 +24,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\civil3d-plugin-ribbon\src\ToolsByRaul.Common\ToolsByRaul.Common.csproj" />
-  </ItemGroup>
-
     <Reference Include="AcMgd">
       <HintPath>$(AutoCADDLL)\AcMgd.dll</HintPath>
       <Private>false</Private>
