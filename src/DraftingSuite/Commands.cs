@@ -13,6 +13,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using ToolsByRaul.Common;
 using WinForms = System.Windows.Forms;
 
 namespace DraftingSuite
@@ -41,6 +42,7 @@ namespace DraftingSuite
         [CommandMethod("DS", CommandFlags.Session)]
         public void OpenPalette()
         {
+            if (!AdvancedMode.RequireCommand("DS", message => Application.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(message))) return;
             DraftingSuitePalette.ShowPalette();
         }
 
