@@ -49,14 +49,14 @@ namespace DraftingSuite
                 DockEnabled = DockSides.Left | DockSides.Right
             };
             paletteSet.Add("Pad", new DraftingSuitePaletteControl(DraftingSuitePaletteTab.Pad));
-            paletteSet.Add("Cleanup", new DraftingSuitePaletteControl(DraftingSuitePaletteTab.Cleanup));
+            paletteSet.Add("Settings", new DraftingSuitePaletteControl(DraftingSuitePaletteTab.Settings));
             paletteSet.Add("Help", new DraftingSuitePaletteControl(DraftingSuitePaletteTab.Help));
         }
 
         private enum DraftingSuitePaletteTab
         {
             Pad,
-            Cleanup,
+            Settings,
             Help
         }
 
@@ -95,9 +95,9 @@ namespace DraftingSuite
                     Disposed += (_, __) => padControls.Remove(this);
                     BuildPadTab();
                 }
-                else if (tab == DraftingSuitePaletteTab.Cleanup)
+                else if (tab == DraftingSuitePaletteTab.Settings)
                 {
-                    BuildCleanupTab();
+                    BuildSettingsTab();
                 }
                 else
                 {
@@ -113,16 +113,14 @@ namespace DraftingSuite
                 AddPadButtonGrid(pad);
             }
 
-            private void BuildCleanupTab()
+            private void BuildSettingsTab()
             {
-                TableLayoutPanel cleanup = AddSection("Cleanup");
-                AddButton(cleanup, "Rogue Element Audit", "_.QCAA ");
-                AddButton(cleanup, "Move Anno to Reference", "_.QCMAN ");
-                AddButton(cleanup, "Move Rogue to Base", "_.QCMBS ");
-                AddButton(cleanup, "Select Zero Elevation", "_.QCSZ0 ");
-                AddButton(cleanup, "Polyline Issues", "_.QCPOLYISSUES ");
-
-                AddValueRow(cleanup, "Source", "QC Tool Suite commands");
+                currentRoot.AutoSize = false;
+                currentRoot.Dock = DockStyle.Fill;
+                currentRoot.Padding = new Padding(0);
+                currentRoot.RowCount = 1;
+                currentRoot.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+                currentRoot.Controls.Add(DraftingSuiteSettingsForm.CreatePaletteControl(), 0, 0);
             }
 
             private void BuildHelpTab()
