@@ -11,6 +11,7 @@ namespace DraftingSuite
     internal sealed class DraftingSuiteSettingsForm : Form
     {
         private static DraftingSuiteSettingsForm instance;
+        private readonly bool hostedInPalette;
         private ComboBox presetCombo;
         private TextBox presetFolderBox;
         private Label presetStatus;
@@ -47,8 +48,9 @@ namespace DraftingSuite
         private bool loadingPadButton;
         private string defaultPresetName;
 
-        private DraftingSuiteSettingsForm()
+        private DraftingSuiteSettingsForm(bool hostedInPalette = false)
         {
+            this.hostedInPalette = hostedInPalette;
             Text = "FBK Prep Config";
             Width = 700;
             Height = 560;
@@ -92,6 +94,19 @@ namespace DraftingSuite
             instance.LoadSettings(DraftingSuiteSettings.LoadActiveSettings());
             instance.Show();
             instance.Activate();
+        }
+
+        internal static Control CreatePaletteControl()
+        {
+            DraftingSuiteSettingsForm editor = new DraftingSuiteSettingsForm(hostedInPalette: true)
+            {
+                TopLevel = false,
+                FormBorderStyle = FormBorderStyle.None,
+                Dock = DockStyle.Fill,
+                MinimumSize = System.Drawing.Size.Empty
+            };
+            editor.Show();
+            return editor;
         }
 
         private Control BuildPresetPanel()
@@ -276,7 +291,12 @@ namespace DraftingSuite
                 "DSCOGOSTD",
                 "CSMCONVERTDWG",
                 "CSMSCANDWTS",
-                "CSMEXPORTBLOCKTHUMBNAILS"
+                "CSMEXPORTBLOCKTHUMBNAILS",
+                "QCAA",
+                "QCMAN",
+                "QCMBS",
+                "QCSZ0",
+                "QCPOLYISSUES"
             });
             padCommandBox.SelectedIndexChanged += (_, __) => SaveSelectedPadButton();
             AddPadConfigRow(editor, "Command", padCommandBox);
@@ -361,14 +381,23 @@ namespace DraftingSuite
                 FlowDirection = FlowDirection.RightToLeft,
                 AutoSize = true
             };
-            Button ok = new Button { Text = "OK", Width = 84 };
-            Button cancel = new Button { Text = "Cancel", Width = 84 };
+            Button ok = new Button { Text = hostedInPalette ? "Save" : "OK", Width = 84 };
             Button reset = new Button { Text = "Reset", Width = 84 };
-            ok.Click += (_, __) => SaveAndClose();
-            cancel.Click += (_, __) => Close();
+            ok.Click += (_, __) =>
+            {
+                if (hostedInPalette)
+                    SaveCurrentSettings(true);
+                else
+                    SaveAndClose();
+            };
             reset.Click += (_, __) => LoadSettings(DraftingSuiteSettings.CreateDefault());
             buttons.Controls.Add(ok);
-            buttons.Controls.Add(cancel);
+            if (!hostedInPalette)
+            {
+                Button cancel = new Button { Text = "Cancel", Width = 84 };
+                cancel.Click += (_, __) => Close();
+                buttons.Controls.Add(cancel);
+            }
             buttons.Controls.Add(reset);
             return buttons;
         }
