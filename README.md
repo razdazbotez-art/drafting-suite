@@ -8,7 +8,7 @@ New installs start with the built-in `Typical` preset.
 
 ## Commands
 
-- `DS` opens the tabbed Drafting Suite palette. The default Pad tab is a compact command pad; Cleanup exposes the five QC Tool Suite cleanup actions, and shared version and command information lives on the Help tab.
+- `DS` opens the tabbed Drafting Suite palette. The Pad tab is a configurable command pad, Settings hosts the current preset and button editor, and Help shows version and command information.
 - `CFBK` combines allowed CAD objects from processed FBK drawings in a selected folder into the active drawing.
 - `DSGRID` creates a scan spacing grid on `0_grid` inside a selected closed polyline.
 - `DSFBKPREP` prepares an opened fieldbook drawing for drafting.
@@ -27,9 +27,7 @@ New installs start with the built-in `Typical` preset.
 - `DSSETTINGS` opens the modeless FBK Prep Config window.
 - `DSVERSION` prints the loaded Drafting Suite version.
 
-## Cleanup
-
-The Cleanup tab exposes the same actions as the QC Tool Suite Cleanup tab: Rogue Element Audit, Move Anno to Reference, Move Rogue to Base, Select Zero Elevation, and Polyline Issues. These buttons run the corresponding QC Tool Suite commands, so QC Tool Suite must also be loaded in the current AutoCAD session.
+The default Pad includes Rogue Element Audit, Move Anno to Reference, Move Rogue to Base, Select Zero Elevation, and Polyline Issues. Each is a normal editable pad button, so its label, order, and visibility can be changed in Settings. These commands require QC Tool Suite to be loaded in the current AutoCAD session.
 
 ## FBK Prep
 
