@@ -402,7 +402,12 @@ namespace DraftingSuite
                 new CommandPadButtonSetting("COGO to Standard", "DSCOGOSTD", "Set selected COGO points to Standard point and label styles.", true),
                 new CommandPadButtonSetting("CSM Convert DWG", "CSMCONVERTDWG", "Convert a source DWG into the active target-standard drawing using an approved CadStandardsMapper profile.", true),
                 new CommandPadButtonSetting("CSM Scan DWTs", "CSMSCANDWTS", "Export CadStandardsMapper inventories from selected source and target DWT files.", true),
-                new CommandPadButtonSetting("CSM Block Thumbs", "CSMEXPORTBLOCKTHUMBNAILS", "Export stored block preview thumbnails for CadStandardsMapper review.", true)
+                new CommandPadButtonSetting("CSM Block Thumbs", "CSMEXPORTBLOCKTHUMBNAILS", "Export stored block preview thumbnails for CadStandardsMapper review.", true),
+                new CommandPadButtonSetting("Rogue Element Audit", "QCAA", "Review rogue CAD elements with QC Tool Suite.", true),
+                new CommandPadButtonSetting("Move Anno to Reference", "QCMAN", "Move annotation to the reference drawing with QC Tool Suite.", true),
+                new CommandPadButtonSetting("Move Rogue to Base", "QCMBS", "Move rogue elements to the base drawing with QC Tool Suite.", true),
+                new CommandPadButtonSetting("Select Zero Elevation", "QCSZ0", "Select objects at zero elevation with QC Tool Suite.", true),
+                new CommandPadButtonSetting("Polyline Issues", "QCPOLYISSUES", "Review repeated vertices and retraced polyline segments with QC Tool Suite.", true)
             };
         }
 
